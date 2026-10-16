@@ -1,0 +1,540 @@
+/* ============================================================================
+   AIRLINES MANAGER — BOM PRICING EXPORTER v0.1.0
+   DOCUMENTATION / MAINTENANCE GUIDE
+
+   PURPOSE
+   Read-only Tampermonkey utility for exporting pricing and audit information
+   for routes already owned by the BOM hub. The user uploads a CSV containing
+   the hub, destination airport code and route ID. For each route, the script
+   retrieves its existing Airlines Manager pricing page, extracts Economy and
+   Cargo audit/current prices and demand, verifies route identity, and writes
+   a downloadable CSV. It does not buy routes, modify prices or run audits.
+
+   END-TO-END WORKFLOW
+   1. Inject a floating control panel into /marketing/pricing pages.
+   2. Read the user's owned-route CSV and validate all BOM route IDs.
+   3. On Start, fetch each route's pricing page sequentially with retries.
+   4. Parse audit values, current values, remaining demand and audit metadata.
+   5. Check that the returned page is for the requested BOM destination.
+   6. Keep per-route errors rather than aborting the whole export.
+   7. Download a checkpoint every 50 routes and a final/partial CSV at the end.
+
+   INPUT
+   CSV with hub (or hub_code), destination code (airport_code,
+   destination_iata or destination), and numeric route_id.
+
+   OUTPUT
+   AM_BOM_Pricing_Checkpoint_N.csv, AM_BOM_Pricing_Complete.csv,
+   AM_BOM_Pricing_Partial.csv, or AM_BOM_Pricing_Current.csv.
+
+   SAFETY / LIMITATIONS
+   - Only GET requests are sent to the game's pricing pages.
+   - BOM is hard-coded both in input validation and route identity checking.
+   - Only Economy and Cargo are exported; Business/First are not captured.
+   - Data extraction depends on the game's HTML/CSS selectors and may break
+     if the site changes its pricing layout.
+   - Results live in memory; checkpoints provide recovery during long runs.
+   - The numeric parser strips non-digits (other than minus signs); this
+     follows the original code and is not suitable for fractional values.
+   - 'Stop' takes effect after the current network request completes.
+
+   DOCUMENTATION-ONLY EDIT: executable statements are unchanged.
+   ============================================================================ */
+
+
+// ==UserScript==
+// @name         Airlines Manager - BOM Pricing Exporter
+// @namespace    https://tycoon.airlines-manager.com/
+// @version      0.1.0
+// @description  Read-only export of existing BOM route pricing and audits
+// @match        https://tycoon.airlines-manager.com/marketing/pricing*
+// @grant        none
+// ==/UserScript==
+
+(() => {
+  "use strict";
+
+  // Guard against installing duplicate panels/listeners on the same page.
+  if (window.__amBomPricingExporter) return;
+  window.__amBomPricingExporter = true;
+
+  // Request pacing, retry count and automatic CSV checkpoint interval.
+  const DELAY_MS = 1000;
+  const MAX_RETRIES = 2;
+  const CHECKPOINT_EVERY = 50;
+
+  // Stable CSV output schema; every export uses this exact column order.
+  const columns = [
+    "hub", "airport_code", "route_id", "status",
+    "audit_date", "audit_reliability",
+    "audit_price_economy", "audit_demand_economy",
+    "audit_price_cargo", "audit_demand_cargo",
+    "current_price_economy", "current_demand_economy",
+    "remaining_demand_economy",
+    "current_price_cargo", "current_demand_cargo",
+    "remaining_demand_cargo", "error"
+  ];
+
+  // Promise-based delay between route requests and retry attempts.
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+  // Extract an integer from displayed game values (e.g. formatted prices).
+  const number = value => {
+    if (!value) return null;
+    const cleaned = String(value).replace(/[^\d-]/g, "");
+    return cleaned === "" ? null : Number(cleaned);
+  };
+
+  /**
+
+   * Parse a user-supplied CSV, including quoted fields, escaped quotes and CRLF line endings. Returns an array of objects keyed by the header row. Used to load owned routes.
+
+   */
+
+  function csvParse(text) {
+    const rows = [];
+    let row = [], field = "", quoted = false;
+
+    text = text.replace(/^\uFEFF/, "");
+
+    for (let i = 0; i < text.length; i++) {
+      const ch = text[i];
+
+      if (quoted) {
+        if (ch === '"' && text[i + 1] === '"') {
+          field += '"';
+          i++;
+        } else if (ch === '"') {
+          quoted = false;
+        } else {
+          field += ch;
+        }
+      } else if (ch === '"') {
+        quoted = true;
+      } else if (ch === ",") {
+        row.push(field);
+        field = "";
+      } else if (ch === "\n") {
+        row.push(field.replace(/\r$/, ""));
+        rows.push(row);
+        row = [];
+        field = "";
+      } else {
+        field += ch;
+      }
+    }
+
+    if (field || row.length) {
+      row.push(field.replace(/\r$/, ""));
+      rows.push(row);
+    }
+
+    const headers = rows.shift().map(x => x.trim());
+    return rows.filter(r => r.some(Boolean)).map(r =>
+      Object.fromEntries(headers.map((h, i) => [h, r[i] ?? ""]))
+    );
+  }
+
+  /**
+
+   * Serialize result objects in the fixed output column order, correctly quote CSV values, and trigger a browser download using a temporary Blob URL.
+
+   */
+
+  function downloadCSV(rows, filename) {
+    const escape = value => {
+      const s = String(value ?? "");
+      return /[",\r\n]/.test(s)
+        ? '"' + s.replace(/"/g, '""') + '"'
+        : s;
+    };
+
+    const csv = [
+      columns.join(","),
+      ...rows.map(row =>
+        columns.map(c => escape(row[c])).join(",")
+      )
+    ].join("\r\n");
+
+    const blob = new Blob(["\uFEFF", csv], {
+      type: "text/csv;charset=utf-8"
+    });
+
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  }
+
+  /**
+
+   * Read one pricing box from parsed HTML and return numeric price, demand and remaining demand. Missing values are represented as null.
+
+   */
+
+  function extractPriceBox(box) {
+    const get = selector =>
+      box.querySelector(selector)?.textContent?.trim() ?? "";
+
+    const price = get(".price");
+    const demand = get(".demand");
+    const remaining = get(".paxLeft");
+
+    return {
+      price: number(price),
+      demand: number(demand),
+      remaining: remaining ? number(remaining) : null
+    };
+  }
+
+  /**
+
+   * Parse one route pricing HTML response. Extract Economy/Cargo audit and current values, audit date/reliability, flag incomplete fields, and verify the route ID and BOM/destination identity.
+
+   */
+
+  function parsePricing(html, route) {
+    const doc = new DOMParser().parseFromString(
+      html, "text/html"
+    );
+
+    const result = {
+      hub: route.hub,
+      airport_code: route.airport_code,
+      route_id: route.route_id,
+      status: "ok"
+    };
+
+    const pricing = doc.querySelector("#marketing_linePricing");
+
+    if (!pricing) {
+      throw new Error("Pricing section not found");
+    }
+
+    const sections = pricing.querySelectorAll(".box1, .box2");
+
+    const audit = pricing.querySelector(".box1");
+    const current = pricing.querySelector(".box2");
+
+    if (!audit || !current) {
+      throw new Error("Audit/current price boxes missing");
+    }
+
+    /**
+
+     * Locate the Economy or Cargo .priceBox within an audit/current pricing section by matching its title text.
+
+     */
+
+    function findBox(section, title) {
+      return [...section.querySelectorAll(".priceBox")].find(box =>
+        box.querySelector(".title")?.textContent
+          ?.toLowerCase().includes(title)
+      );
+    }
+
+    const auditEco = findBox(audit, "economy");
+    const auditCargo = findBox(audit, "cargo");
+    const currentEco = findBox(current, "economy");
+    const currentCargo = findBox(current, "cargo");
+
+    if (!auditEco || !auditCargo || !currentEco || !currentCargo) {
+      throw new Error("Required Economy/Cargo boxes missing");
+    }
+
+    const ae = extractPriceBox(auditEco);
+    const ac = extractPriceBox(auditCargo);
+    const ce = extractPriceBox(currentEco);
+    const cc = extractPriceBox(currentCargo);
+
+    result.audit_price_economy = ae.price;
+    result.audit_demand_economy = ae.demand;
+    result.audit_price_cargo = ac.price;
+    result.audit_demand_cargo = ac.demand;
+
+    result.current_price_economy = ce.price;
+    result.current_demand_economy = ce.demand;
+    result.remaining_demand_economy = ce.remaining;
+
+    result.current_price_cargo = cc.price;
+    result.current_demand_cargo = cc.demand;
+    result.remaining_demand_cargo = cc.remaining;
+
+    const dateText = [...pricing.querySelectorAll(".dashMachine")]
+      .find(el => el.textContent.includes("Date"));
+
+    result.audit_date =
+      dateText?.querySelector("b")?.textContent?.trim() ?? "";
+
+    result.audit_reliability =
+      pricing.querySelector(".reliability")
+        ?.textContent?.trim() ?? "";
+
+    const required = [
+      ae.price, ae.demand, ac.price, ac.demand,
+      ce.price, ce.demand, cc.price, cc.demand
+    ];
+
+    if (required.some(v => v === null)) {
+      result.status = "incomplete";
+      result.error = "One or more required values missing";
+    }
+
+    // Confirm the response belongs to the requested route.
+    const mapData = doc.querySelector("#map_NetworkJson");
+
+    if (mapData) {
+      try {
+        const data = JSON.parse(mapData.textContent);
+        const actual = data[0];
+
+        if (
+          String(actual?.id) !== String(route.route_id) ||
+          actual?.airportOne?.iata !== "BOM" ||
+          actual?.airportTwo?.iata !== route.airport_code
+        ) {
+          throw new Error("Route identity mismatch");
+        }
+      } catch (err) {
+        throw new Error("Route verification failed: " + err.message);
+      }
+    } else {
+      throw new Error("Route identity data missing");
+    }
+
+    return result;
+  }
+
+  /**
+
+   * GET one route pricing page, reject HTTP failures, unexpected redirects and login pages, then parse it. Retry transient failures up to MAX_RETRIES; return a status=error record if all attempts fail.
+
+   */
+
+  async function fetchPricing(route) {
+    const url = "/marketing/pricing/" +
+      encodeURIComponent(route.route_id);
+
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        const response = await fetch(url, {
+          method: "GET",
+          credentials: "same-origin",
+          redirect: "follow",
+          cache: "no-store"
+        });
+
+        if (!response.ok) {
+          throw new Error("HTTP " + response.status);
+        }
+
+        if (
+          new URL(response.url).pathname !==
+          "/marketing/pricing/" + route.route_id
+        ) {
+          throw new Error("Unexpected redirect");
+        }
+
+        const html = await response.text();
+
+        if (!html.includes("marketing_linePricing")) {
+          throw new Error("Unexpected response/login page");
+        }
+
+        return parsePricing(html, route);
+
+      } catch (error) {
+        if (attempt === MAX_RETRIES) {
+          return {
+            hub: route.hub,
+            airport_code: route.airport_code,
+            route_id: route.route_id,
+            status: "error",
+            error: error.message
+          };
+        }
+
+        await sleep(DELAY_MS * (attempt + 2));
+      }
+    }
+  }
+
+  /**
+
+   * Construct and attach the floating user interface with CSV file input, progress text, Start/Stop buttons and a results download button.
+
+   */
+
+  function createPanel() {
+    const panel = document.createElement("div");
+    panel.style.cssText = `
+      position:fixed;right:16px;bottom:16px;z-index:999999;
+      background:#20242b;color:white;padding:16px;
+      width:320px;border-radius:10px;
+      font:13px Arial,sans-serif;
+      box-shadow:0 6px 24px #0007;
+    `;
+
+    panel.innerHTML = `
+      <div style="font-size:16px;font-weight:bold;margin-bottom:10px">
+        BOM Pricing Exporter v0.1
+      </div>
+      <div style="margin-bottom:8px">
+        Upload the BOM owned-route CSV containing route_id.
+      </div>
+      <input id="am-pricing-file" type="file" accept=".csv"
+        style="width:100%;margin-bottom:10px">
+      <div id="am-pricing-status" style="margin-bottom:10px">
+        Waiting for CSV
+      </div>
+      <button id="am-pricing-start" disabled>Start export</button>
+      <button id="am-pricing-stop" disabled>Stop</button>
+      <button id="am-pricing-download" disabled>Download results</button>
+    `;
+
+    document.body.appendChild(panel);
+    return panel;
+  }
+
+  // Cache panel elements and maintain state for the current browser session.
+  const panel = createPanel();
+  const fileInput = panel.querySelector("#am-pricing-file");
+  const startButton = panel.querySelector("#am-pricing-start");
+  const stopButton = panel.querySelector("#am-pricing-stop");
+  const downloadButton = panel.querySelector("#am-pricing-download");
+  const status = panel.querySelector("#am-pricing-status");
+
+  let routes = [];
+  let results = [];
+  let stopped = false;
+  let running = false;
+
+  /** CSV UPLOAD HANDLER: read/normalise input, require BOM and unique numeric
+   * route IDs, then enable Start only when the entire CSV passes validation. */
+  fileInput.addEventListener("change", async () => {
+    try {
+      const file = fileInput.files[0];
+      if (!file) return;
+
+      const parsed = csvParse(await file.text());
+
+      routes = parsed.map(row => ({
+        hub: (row.hub || row.hub_code || "").trim().toUpperCase(),
+        airport_code: (
+          row.airport_code ||
+          row.destination_iata ||
+          row.destination ||
+          ""
+        ).trim().toUpperCase(),
+        route_id: String(row.route_id || "").trim()
+      }));
+
+      if (!routes.length) {
+        throw new Error("CSV contains no routes");
+      }
+
+      if (routes.some(r =>
+        r.hub !== "BOM" ||
+        !/^[A-Z0-9]{3}$/.test(r.airport_code) ||
+        !/^\d+$/.test(r.route_id)
+      )) {
+        throw new Error(
+          "CSV must contain valid hub, airport_code and route_id"
+        );
+      }
+
+      const ids = routes.map(r => r.route_id);
+
+      if (new Set(ids).size !== ids.length) {
+        throw new Error("Duplicate route IDs in CSV");
+      }
+
+      results = [];
+      startButton.disabled = false;
+      downloadButton.disabled = true;
+      status.textContent = `${routes.length} BOM routes loaded`;
+
+    } catch (error) {
+      routes = [];
+      startButton.disabled = true;
+      status.textContent = "Error: " + error.message;
+    }
+  });
+
+  /** START HANDLER: process routes sequentially; update progress; save
+   * checkpoints every CHECKPOINT_EVERY rows and a final/partial CSV. */
+  startButton.addEventListener("click", async () => {
+    if (running || !routes.length) return;
+
+    running = true;
+    stopped = false;
+    results = [];
+
+    startButton.disabled = true;
+    stopButton.disabled = false;
+    fileInput.disabled = true;
+
+    for (let i = 0; i < routes.length; i++) {
+      if (stopped) break;
+
+      const result = await fetchPricing(routes[i]);
+      results.push(result);
+
+      const errors = results.filter(
+        r => r.status !== "ok"
+      ).length;
+
+      status.textContent =
+        `Processed ${results.length}/${routes.length} ` +
+        `| Issues: ${errors}`;
+
+      downloadButton.disabled = false;
+
+      if (results.length % CHECKPOINT_EVERY === 0) {
+        downloadCSV(
+          results,
+          `AM_BOM_Pricing_Checkpoint_${results.length}.csv`
+        );
+      }
+
+      if (i < routes.length - 1) {
+        await sleep(DELAY_MS);
+      }
+    }
+
+    running = false;
+    stopButton.disabled = true;
+    fileInput.disabled = false;
+    startButton.disabled = false;
+
+    downloadCSV(
+      results,
+      stopped
+        ? "AM_BOM_Pricing_Partial.csv"
+        : "AM_BOM_Pricing_Complete.csv"
+    );
+
+    status.textContent += stopped
+      ? " | Stopped; partial CSV saved"
+      : " | Finished; CSV downloaded";
+  });
+
+  /** STOP HANDLER: request a graceful stop after the current fetch. */
+  stopButton.addEventListener("click", () => {
+    stopped = true;
+    status.textContent += " | Stopping after current request";
+  });
+
+  /** DOWNLOAD HANDLER: export results collected so far on demand. */
+  downloadButton.addEventListener("click", () => {
+    if (results.length) {
+      downloadCSV(results, "AM_BOM_Pricing_Current.csv");
+    }
+  });
+
+})();

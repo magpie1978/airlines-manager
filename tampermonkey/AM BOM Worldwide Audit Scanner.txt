@@ -1,0 +1,1244 @@
+
+// ==UserScript==
+// @name         AM BOM Worldwide Audit Scanner
+// @namespace    am-bom-tools
+// @version      1.4.0
+// @description  Read-only worldwide BOM destination inventory scanner
+// @match        https://tycoon.airlines-manager.com/network/newline*
+// @grant        none
+// @run-at       document-idle
+// ============================================================================
+// OVERVIEW — AM BOM WORLDWIDE AUDIT SCANNER v1.4.0
+// ============================================================================
+// PURPOSE
+//   Read-only collection of available destinations from the Airlines Manager
+//   "new line" catalogue for the BOM hub. The script visits each country,
+//   reads airport cards and produces a CSV inventory for offline analysis.
+//
+// HOW IT WORKS
+//   1. On the main destination page, discover countries from the World filter.
+//   2. Visit each country's destination list for the configured BOM hub.
+//   3. Wait for the page to settle; extract airports, distances, categories,
+//      prices, audit status, approximate demand and other displayed fields.
+//   4. Persist results and per-country progress in browser localStorage so
+//      a scan can be paused and resumed across page loads.
+//   5. Export the collected inventory with the on-screen Export CSV button.
+//
+// IMPORTANT LIMITATIONS / SAFETY
+//   * This script reads page content and navigates between country pages.
+//     It does not purchase routes or trigger game audit actions.
+//   * The catalogue displays available destinations, not necessarily routes
+//     already owned by the airline; an absent airport is not proof of ownership.
+//   * Earlier complete audit data may be retained if a later page lacks it.
+//     Consequently, some demand values may be older than the latest scan.
+//   * HUB_ID, CSV filename, storage keys, source labels and output hub are
+//     BOM-specific. This is NOT yet a configurable multi-hub exporter.
+//   * A380 compatibility is a simple distance/category check, not a complete
+//     guarantee that a flight can be scheduled or operated profitably.
+//   * The script is sensitive to changes in the game's HTML/CSS structure.
+//
+// CODE CHANGES IN THIS EDITION
+//   Documentation comments only. The executable code is preserved verbatim.
+// ============================================================================
+
+// ==/UserScript==
+
+(function () {
+  "use strict";
+
+  // ============================================================
+  // CONFIGURATION
+  // Fixed BOM settings, browser storage keys, A380 thresholds and delays. Changing HUB_ID alone would not make this a fully generic multi-hub scanner: labels, keys and exported fields also embed BOM.
+  // ============================================================
+
+  const HUB_ID = "17532584";
+
+  const BASE_URL =
+    "https://tycoon.airlines-manager.com/network/newline";
+
+  // Keep existing storage keys so previous work is preserved.
+  const OLD_AUDITS_KEY = "am_bom_audited_routes_v1";
+  const DATA_KEY = "am_bom_worldwide_scan_v1";
+  const PROGRESS_KEY = "am_bom_worldwide_progress_v1";
+  const COUNTRIES_KEY = "am_bom_worldwide_countries_v3";
+  const CONTROL_KEY = "am_bom_worldwide_control_v3";
+
+  const A380_RANGE_KM = 15556;
+  const A380_MIN_CATEGORY = 8;
+
+  const PAGE_DELAY_MS = 1500;
+  const LOAD_TIMEOUT_MS = 20000;
+  const STABLE_PERIOD_MS = 1000;
+
+  // $: Selects the first matching element in the document.
+  const $ = selector => document.querySelector(selector);
+  // $$: Selects all matching elements and returns a normal array.
+  const $$ = selector => [...document.querySelectorAll(selector)];
+
+  // sleep: Returns a Promise that resolves after the requested delay.
+  const sleep = ms =>
+    new Promise(resolve => setTimeout(resolve, ms));
+
+  // ============================================================
+  // STORAGE
+  // Persistent browser storage allows a scan to survive navigation and be resumed later. This script uses localStorage, not Supabase.
+  // ============================================================
+
+  /**
+   * read() — Reads JSON data from browser localStorage.
+   * Returns the supplied fallback when the key is missing or its stored JSON is invalid.
+   */
+  function read(key, fallback) {
+    try {
+      return JSON.parse(localStorage.getItem(key)) ?? fallback;
+    } catch {
+      return fallback;
+    }
+  }
+
+  /**
+   * write() — Persists a JavaScript value in localStorage as JSON.
+   * Used to keep scan results and progress across page navigation and browser reloads.
+   */
+  function write(key, value) {
+    localStorage.setItem(key, JSON.stringify(value));
+  }
+
+  let records = read(DATA_KEY, {});
+  let progress = read(PROGRESS_KEY, {});
+  let countries = read(COUNTRIES_KEY, []);
+
+  let control = read(CONTROL_KEY, {
+    running: false,
+    index: 0,
+    completed: false,
+    error: null
+  });
+
+  /**
+   * saveRecords() — Saves the accumulated destination inventory.
+   * Writes the in-memory records object under DATA_KEY.
+   */
+  function saveRecords() {
+    write(DATA_KEY, records);
+  }
+
+  /**
+   * saveProgress() — Saves the per-country completion log.
+   * Enables a resumed scan to skip countries already processed.
+   */
+  function saveProgress() {
+    write(PROGRESS_KEY, progress);
+  }
+
+  /**
+   * saveControl() — Saves the scanner run state.
+   * Persists running/paused state, current country index, completion and errors.
+   */
+  function saveControl() {
+    write(CONTROL_KEY, control);
+  }
+
+  // ============================================================
+  // HELPERS
+  // Small reusable routines for parsing page text, identifying country pages, logging and stopping safely.
+  // ============================================================
+
+  /**
+   * clean() — Normalises text extracted from the game page.
+   * Collapses whitespace and trims surrounding spaces.
+   */
+  function clean(value) {
+    return String(value ?? "")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  /**
+   * number() — Extracts a numeric value from formatted page text.
+   * Accepts commas and decimals; returns null when no number is found.
+   */
+  function number(value) {
+    const match = clean(value)
+      .match(/-?[\d,]+(?:\.\d+)?/);
+
+    return match
+      ? Number(match[0].replace(/,/g, ""))
+      : null;
+  }
+
+  /**
+   * isMainPage() — Checks whether the browser is on the destination catalogue landing page.
+   * Country discovery is initiated from this page.
+   */
+  function isMainPage() {
+    return location.pathname.replace(/\/+$/, "") ===
+      "/network/newline";
+  }
+
+  /**
+   * getCurrentCountryCode() — Identifies the country shown by the current URL.
+   * Returns null unless the URL belongs to the configured hub.
+   */
+  function getCurrentCountryCode() {
+    const parts = location.pathname
+      .split("/")
+      .filter(Boolean);
+
+    if (
+      parts[0] !== "network" ||
+      parts[1] !== "newline" ||
+      parts[2] !== HUB_ID
+    ) {
+      return null;
+    }
+
+    return parts[3] || null;
+  }
+
+  /**
+   * countryURL() — Builds the destination-list URL for a country.
+   * Combines the configured hub ID and encoded country code.
+   */
+  function countryURL(code) {
+    return (
+      BASE_URL +
+      "/" +
+      HUB_ID +
+      "/" +
+      encodeURIComponent(code)
+    );
+  }
+
+  /**
+   * log() — Reports progress to the browser console and on-screen panel.
+   * Shows newest messages first with a local timestamp.
+   */
+  function log(message) {
+    console.log("[BOM Scanner]", message);
+
+    const element = $("#am-bom-log");
+
+    if (!element) return;
+
+    const timestamp = new Date().toLocaleTimeString();
+
+    element.textContent =
+      `[${timestamp}] ${message}\n` +
+      element.textContent.slice(0, 4500);
+  }
+
+  /**
+   * stopWithError() — Stops the scan after a recoverable processing failure.
+   * Persists the error and updates the user interface; does not clear collected data.
+   */
+  function stopWithError(message) {
+    control.running = false;
+    control.error = message;
+
+    saveControl();
+
+    log("STOPPED: " + message);
+    updatePanel();
+  }
+
+  // ============================================================
+  // IMPORT PREVIOUS AUDITED DESTINATIONS
+  // Imports earlier audited destinations without overwriting records already in the newer inventory.
+  // ============================================================
+
+  /**
+   * importOldAudits() — Migrates previously collected audit records into the current inventory.
+   * Existing inventory entries take precedence; imported entries retain an origin marker.
+   */
+  function importOldAudits() {
+    const old = read(OLD_AUDITS_KEY, {});
+
+    let imported = 0;
+
+    for (const [key, record] of Object.entries(old)) {
+      if (records[key]) continue;
+
+      records[key] = {
+        ...record,
+        audit_status: "AUDITED",
+        source: "original_audit_exporter"
+      };
+
+      imported++;
+    }
+
+    if (imported) {
+      saveRecords();
+    }
+
+    return imported;
+  }
+
+  // ============================================================
+  // WORLDWIDE COUNTRY DISCOVERY
+  // Finds available countries in the game UI; avoids hard-coding a fixed country list.
+  // ============================================================
+
+  /**
+   * discoverCountries() — Reads the worldwide country list from the game interface.
+   * Selects the World filter and requires at least 150 country options as a loading sanity check.
+   */
+  function discoverCountries() {
+    const picker = $("#countryPicker");
+
+    if (!picker) {
+      throw new Error(
+        "Country dropdown not found"
+      );
+    }
+
+    const worldRadio =
+      $('input.mapPicker[value="world"]');
+
+    if (!worldRadio) {
+      throw new Error(
+        "World radio button not found"
+      );
+    }
+
+    // Only interacts with the game's continent filter.
+    // No audit or purchase actions are triggered.
+    if (!worldRadio.checked) {
+      worldRadio.click();
+    }
+
+    const found = [...picker.options]
+      .filter(option =>
+        option.value &&
+        !option.disabled &&
+        !option.value.includes("-")
+      )
+      .map(option => ({
+        code: option.value,
+        name: clean(option.textContent)
+          .replace(/\s*\(\d+\)$/, ""),
+        expected: Number(
+          option.textContent.match(/\((\d+)\)/)?.[1] || 0
+        )
+      }));
+
+    if (found.length < 150) {
+      throw new Error(
+        `Only ${found.length} countries found. ` +
+        "The World list may not have loaded."
+      );
+    }
+
+    countries = found;
+
+    write(COUNTRIES_KEY, countries);
+
+    return found;
+  }
+
+  // ============================================================
+  // DEMAND EXTRACTION
+  // Parses displayed passenger and cargo demand from destination cards.
+  // ============================================================
+
+  /**
+   * extractDemand() — Reads approximate daily demand for each travel class from an airport card.
+   * Returns economy, business, first and cargo values, or null for missing values.
+   */
+  function extractDemand(box) {
+    const demand = {
+      economy: null,
+      business: null,
+      first: null,
+      cargo: null
+    };
+
+    for (const p of box.querySelectorAll(".demand p")) {
+      const label = clean(
+        p.querySelector(".classLabel")?.textContent
+      ).toLowerCase();
+
+      const value = number(
+        p.querySelector(".bold")?.textContent
+      );
+
+      if (label.includes("economy")) {
+        demand.economy = value;
+      } else if (label.includes("business")) {
+        demand.business = value;
+      } else if (label.includes("first")) {
+        demand.first = value;
+      } else if (label.includes("cargo")) {
+        demand.cargo = value;
+      }
+    }
+
+    return demand;
+  }
+
+  // ============================================================
+  // AIRPORT EXTRACTION
+  // Transforms each destination card into the exported inventory schema.
+  // ============================================================
+
+  /**
+   * extractAirport() — Converts one airport card into a structured destination record.
+   * Includes airport metadata, distance, price, audit status, demand, tax, traffic and A380 compatibility.
+   */
+  function extractAirport(box, country) {
+    const airportId = box.id.match(
+      /^hubListBox(\d+)$/
+    )?.[1];
+
+    if (!airportId) return null;
+
+    const iata = clean(
+      box.querySelector(".massAuditCheckbox")?.value
+    ).toUpperCase();
+
+    if (!iata) return null;
+
+    const title = box.querySelector(".hubNameBox");
+
+    const auditDate = box.dataset.audit || "0";
+
+    const category = number(
+      box.dataset.category
+    );
+
+    const distance = number(
+      box.dataset.distance
+    );
+
+    const demand = extractDemand(box);
+
+    const hasAudit =
+      auditDate !== "0" &&
+      auditDate !== "";
+
+    const demandComplete =
+      Object.values(demand)
+        .every(value => value !== null);
+
+    const info = box.querySelector(
+      ".hubCategoryBox"
+    );
+
+    const taxLine = [
+      ...(info?.querySelectorAll("p") || [])
+    ].find(p =>
+      p.textContent.includes("Airport tax")
+    );
+
+    const trafficTitle =
+      box.querySelector(".activityStarsBox")?.title || "";
+
+    return {
+      hub: "BOM",
+      hub_id: HUB_ID,
+
+      airport_id: airportId,
+      iata,
+
+      airport_name: box.dataset.name || "",
+
+      city: clean(
+        title?.querySelector("i")?.textContent
+      ),
+
+      country: country.name,
+      country_code: country.code,
+
+      category,
+      distance_km: distance,
+
+      route_purchase_price: number(
+        box.dataset.price
+      ),
+
+      audit_date: auditDate,
+
+      audit_status: !hasAudit
+        ? "NOT_AUDITED"
+        : demandComplete
+          ? "AUDITED"
+          : "AUDIT_INCOMPLETE",
+
+      economy_demand_day_approx:
+        demand.economy,
+
+      business_demand_day_approx:
+        demand.business,
+
+      first_demand_day_approx:
+        demand.first,
+
+      cargo_demand_day_approx:
+        demand.cargo,
+
+      airport_tax_per_flight: number(
+        taxLine?.textContent
+      ),
+
+      traffic_score: number(
+        trafficTitle.split("Score :")[1]
+      ),
+
+      a380_compatible:
+        category !== null &&
+        distance !== null &&
+        category >= A380_MIN_CATEGORY &&
+        distance <= A380_RANGE_KM
+          ? "YES"
+          : "NO",
+
+      collected_at:
+        new Date().toISOString(),
+
+      source:
+        "worldwide_scanner_v1.4"
+    };
+  }
+
+  // ============================================================
+  // WAIT FOR DESTINATION LIST TO STABILISE
+  // Waits for the game’s dynamically rendered airport list before reading it.
+  // ============================================================
+
+  /**
+   * waitForStableAirportList() — Waits for the displayed airport list to stop changing.
+   * Uses the card IDs as a stability signature and times out rather than exporting a partially loaded page.
+   */
+  async function waitForStableAirportList() {
+    const start = Date.now();
+
+    let previousSignature = null;
+    let stableSince = null;
+
+    while (
+      Date.now() - start <
+      LOAD_TIMEOUT_MS
+    ) {
+      const list = $(".airportList");
+
+      if (list) {
+        const boxes = $$(
+          ".airportList .hubListBox"
+        );
+
+        const signature = boxes
+          .map(box => box.id)
+          .join("|");
+
+        if (
+          signature === previousSignature
+        ) {
+          if (stableSince === null) {
+            stableSince = Date.now();
+          }
+
+          if (
+            Date.now() - stableSince >=
+            STABLE_PERIOD_MS
+          ) {
+            return boxes;
+          }
+        } else {
+          previousSignature = signature;
+          stableSince = null;
+        }
+      }
+
+      await sleep(250);
+    }
+
+    throw new Error(
+      "Airport list did not stabilise within 20 seconds"
+    );
+  }
+
+  // ============================================================
+  // COUNTRY SCANNING
+  // Validates, merges and persists one country’s displayed airports.
+  // ============================================================
+
+  /**
+   * scanCountry() — Collects and validates all displayed destinations for one country.
+   * Checks page identity and duplicate IDs; preserves older complete audits if current demand is incomplete.
+   */
+  async function scanCountry(country) {
+    const currentCode =
+      getCurrentCountryCode();
+
+    if (currentCode !== country.code) {
+      throw new Error(
+        `Wrong country page: expected ${country.code}, ` +
+        `found ${currentCode}`
+      );
+    }
+
+    const boxes =
+      await waitForStableAirportList();
+
+    // IMPORTANT:
+    // The dropdown may count ALL airports in a country,
+    // while the destination page only displays routes
+    // that have not already been purchased from BOM.
+    //
+    // Therefore:
+    //   displayed <= dropdown count is acceptable
+    //   displayed > dropdown count is suspicious
+
+    if (
+      country.expected > 0 &&
+      boxes.length > country.expected
+    ) {
+      throw new Error(
+        `${country.name}: found ${boxes.length} airports, ` +
+        `but the country dropdown lists only ${country.expected}`
+      );
+    }
+
+    const notShown = Math.max(
+      0,
+      country.expected - boxes.length
+    );
+
+    log(
+      `${country.name}: ${boxes.length} available, ` +
+      `${country.expected} listed, ` +
+      `${notShown} not shown (possibly owned)`
+    );
+
+    const extracted = boxes.map(
+      box => extractAirport(box, country)
+    );
+
+    if (
+      extracted.some(
+        record => record === null
+      )
+    ) {
+      throw new Error(
+        `${country.name}: some airport records ` +
+        "could not be parsed"
+      );
+    }
+
+    const ids = new Set(
+      extracted.map(
+        record => record.airport_id
+      )
+    );
+
+    if (
+      ids.size !== extracted.length
+    ) {
+      throw new Error(
+        `${country.name}: duplicate airport IDs on page`
+      );
+    }
+
+    // Save all successfully extracted airports.
+    for (const record of extracted) {
+      const key =
+        `${HUB_ID}:${record.airport_id}`;
+
+      const previous =
+        records[key];
+
+      // Preserve previously audited demand if the
+      // current page lacks complete audit data.
+      if (
+        previous?.audit_status === "AUDITED" &&
+        record.audit_status !== "AUDITED"
+      ) {
+        records[key] = {
+          ...record,
+
+          audit_date:
+            previous.audit_date,
+
+          audit_status:
+            previous.audit_status,
+
+          economy_demand_day_approx:
+            previous.economy_demand_day_approx,
+
+          business_demand_day_approx:
+            previous.business_demand_day_approx,
+
+          first_demand_day_approx:
+            previous.first_demand_day_approx,
+
+          cargo_demand_day_approx:
+            previous.cargo_demand_day_approx
+        };
+      } else {
+        records[key] = record;
+      }
+    }
+
+    saveRecords();
+
+    progress[country.code] = {
+      status: "DONE",
+      expected: country.expected,
+      available: extracted.length,
+      not_shown: notShown,
+      scanned_at:
+        new Date().toISOString()
+    };
+
+    saveProgress();
+
+    log(
+      `OK ${country.name}: ` +
+      `${extracted.length} available destinations`
+    );
+  }
+
+  // ============================================================
+  // NAVIGATION
+  // Advances through country pages while preserving progress.
+  // ============================================================
+
+  /**
+   * navigateToCountry() — Opens the next country’s destination page.
+   * Uses ordinary browser navigation; does not initiate an audit or purchase.
+   */
+  function navigateToCountry(country) {
+    log(
+      `Opening ${country.name} (${country.code})`
+    );
+
+    // Ordinary destination-list page navigation.
+    // Never calls audit or purchase endpoints.
+    location.assign(
+      countryURL(country.code)
+    );
+  }
+
+  /**
+   * runScanner() — Controls the multi-country scanning sequence.
+   * Skips completed countries, navigates as needed, scans one page at a time and records completion or errors.
+   */
+  async function runScanner() {
+    if (!control.running) return;
+
+    if (!countries.length) {
+      stopWithError(
+        "No saved worldwide country list"
+      );
+      return;
+    }
+
+    // Skip countries already completed.
+    while (
+      control.index < countries.length &&
+      progress[
+        countries[control.index].code
+      ]?.status === "DONE"
+    ) {
+      control.index++;
+    }
+
+    saveControl();
+
+    const country =
+      countries[control.index];
+
+    if (!country) {
+      control.running = false;
+      control.completed = true;
+      control.error = null;
+
+      saveControl();
+
+      log(
+        "WORLDWIDE SCAN COMPLETE"
+      );
+
+      updatePanel();
+      return;
+    }
+
+    if (
+      getCurrentCountryCode() !==
+      country.code
+    ) {
+      navigateToCountry(country);
+      return;
+    }
+
+    try {
+      await scanCountry(country);
+
+      control.index++;
+      saveControl();
+
+      updatePanel();
+
+      await sleep(
+        PAGE_DELAY_MS
+      );
+
+      if (control.running) {
+        runScanner();
+      }
+
+    } catch (error) {
+      stopWithError(
+        error.message
+      );
+    }
+  }
+
+  // ============================================================
+  // START / PAUSE
+  // User controls for beginning, resuming and pausing the scan.
+  // ============================================================
+
+  /**
+   * startScan() — Starts or resumes the worldwide scan.
+   * Discovers countries on the landing page, locates the first unfinished country and persists running state.
+   */
+  function startScan() {
+    if (control.running) {
+      log(
+        "Scanner already running"
+      );
+      return;
+    }
+
+    if (isMainPage()) {
+      try {
+        discoverCountries();
+      } catch (error) {
+        stopWithError(
+          error.message
+        );
+        return;
+      }
+    }
+
+    if (!countries.length) {
+      stopWithError(
+        "Open the main /network/newline page " +
+        "to initialise the worldwide country list"
+      );
+      return;
+    }
+
+    control.running = true;
+    control.completed = false;
+    control.error = null;
+
+    const firstPending =
+      countries.findIndex(
+        country =>
+          progress[
+            country.code
+          ]?.status !== "DONE"
+      );
+
+    control.index =
+      firstPending < 0
+        ? countries.length
+        : firstPending;
+
+    saveControl();
+
+    log(
+      `Starting worldwide scan: ` +
+      `${countries.length} countries`
+    );
+
+    runScanner();
+  }
+
+  /**
+   * pauseScan() — Pauses future scanning activity.
+   * Sets running=false and updates status; any already-started page operation may still finish.
+   */
+  function pauseScan() {
+    control.running = false;
+
+    saveControl();
+
+    log(
+      "Scanner paused"
+    );
+
+    updatePanel();
+  }
+
+  // ============================================================
+  // CSV EXPORT
+  // Creates a downloadable inventory file from stored records; does not change the game.
+  // ============================================================
+
+  /**
+   * exportCSV() — Downloads the accumulated inventory as a CSV file.
+   * Sorts by IATA code, escapes values and writes AM_BOM_Worldwide_Audit_Inventory.csv.
+   */
+  function exportCSV() {
+    const rows =
+      Object.values(records)
+        .sort((a, b) =>
+          String(a.iata)
+            .localeCompare(
+              String(b.iata)
+            )
+        );
+
+    if (!rows.length) {
+      alert(
+        "No airport records collected."
+      );
+      return;
+    }
+
+    const columns = [
+      ...new Set(
+        rows.flatMap(
+          row => Object.keys(row)
+        )
+      )
+    ];
+
+    const quote = value =>
+      `"${String(value ?? "")
+        .replace(/"/g, '""')}"`;
+
+    const csv = [
+      columns.map(quote).join(","),
+
+      ...rows.map(row =>
+        columns.map(
+          column =>
+            quote(row[column])
+        ).join(",")
+      )
+    ].join("\r\n");
+
+    const blob = new Blob(
+      [csv],
+      {
+        type:
+          "text/csv;charset=utf-8"
+      }
+    );
+
+    const url =
+      URL.createObjectURL(blob);
+
+    const link =
+      document.createElement("a");
+
+    link.href = url;
+
+    link.download =
+      "AM_BOM_Worldwide_Audit_Inventory.csv";
+
+    document.body.appendChild(
+      link
+    );
+
+    link.click();
+    link.remove();
+
+    setTimeout(
+      () => URL.revokeObjectURL(url),
+      1000
+    );
+
+    log(
+      `Exported ${rows.length} unique destinations`
+    );
+  }
+
+  // ============================================================
+  // STATUS
+  // Calculates and displays scan progress and audit completeness.
+  // ============================================================
+
+  /**
+   * updatePanel() — Refreshes the scanner’s on-screen progress summary.
+   * Shows completed countries, destination counts, audit states, missing listings and errors.
+   */
+  function updatePanel() {
+    const status =
+      $("#am-bom-status");
+
+    if (!status) return;
+
+    const rows =
+      Object.values(records);
+
+    const completed =
+      countries.filter(
+        country =>
+          progress[
+            country.code
+          ]?.status === "DONE"
+      ).length;
+
+    const audited =
+      rows.filter(
+        record =>
+          record.audit_status === "AUDITED"
+      ).length;
+
+    const unaudited =
+      rows.filter(
+        record =>
+          record.audit_status === "NOT_AUDITED"
+      ).length;
+
+    const incomplete =
+      rows.filter(
+        record =>
+          record.audit_status === "AUDIT_INCOMPLETE"
+      ).length;
+
+    const notShown =
+      countries.reduce(
+        (sum, country) =>
+          sum +
+          (
+            progress[
+              country.code
+            ]?.not_shown || 0
+          ),
+        0
+      );
+
+    const current =
+      countries[control.index];
+
+    status.textContent =
+      `Status: ${
+        control.running
+          ? "RUNNING"
+          : control.completed
+            ? "COMPLETE"
+            : "PAUSED"
+      }\n` +
+
+      `Countries: ${completed}/${countries.length}\n` +
+      `Destinations: ${rows.length}\n` +
+      `Audited: ${audited}\n` +
+      `Unaudited: ${unaudited}\n` +
+      `Incomplete audits: ${incomplete}\n` +
+      `Not shown (possibly owned): ${notShown}\n` +
+      `Next: ${current?.name || "Finished"}`;
+
+    if (control.error) {
+      status.textContent +=
+        `\nError: ${control.error}`;
+    }
+  }
+
+  // ============================================================
+  // PANEL
+  // Builds the small floating browser interface.
+  // ============================================================
+
+  /**
+   * makeButton() — Creates a styled button for the scanner panel.
+   * Attaches the supplied click handler and applies primary/secondary styling.
+   */
+  function makeButton(
+    text,
+    handler,
+    primary = false
+  ) {
+    const button =
+      document.createElement("button");
+
+    button.textContent = text;
+    button.onclick = handler;
+
+    Object.assign(
+      button.style,
+      {
+        padding: "8px 10px",
+        margin: "3px",
+        border: 0,
+        borderRadius: "5px",
+        cursor: "pointer",
+        background: primary
+          ? "#ccff00"
+          : "#e5e7eb",
+        color: "#111",
+        fontWeight: primary
+          ? "bold"
+          : "normal"
+      }
+    );
+
+    return button;
+  }
+
+  /**
+   * makePanel() — Creates the floating scanner controls and log window.
+   * Adds Start/Resume, Pause and Export CSV buttons without duplicating an existing panel.
+   */
+  function makePanel() {
+    if (
+      $("#am-bom-worldwide-panel")
+    ) return;
+
+    const panel =
+      document.createElement("div");
+
+    panel.id =
+      "am-bom-worldwide-panel";
+
+    Object.assign(
+      panel.style,
+      {
+        position: "fixed",
+        right: "16px",
+        bottom: "16px",
+        zIndex: "999999",
+        width: "320px",
+        padding: "14px",
+        border:
+          "1px solid #ccff00",
+        borderRadius: "10px",
+        background: "#17202b",
+        color: "white",
+        font:
+          "13px Arial, sans-serif",
+        boxShadow:
+          "0 5px 25px #0008"
+      }
+    );
+
+    const heading =
+      document.createElement("div");
+
+    heading.textContent =
+      "BOM Worldwide Audit Scanner v1.4";
+
+    heading.style.fontWeight =
+      "bold";
+
+    heading.style.marginBottom =
+      "10px";
+
+    const status =
+      document.createElement("pre");
+
+    status.id =
+      "am-bom-status";
+
+    status.style.whiteSpace =
+      "pre-wrap";
+
+    const controls =
+      document.createElement("div");
+
+    controls.append(
+      makeButton(
+        "Start / Resume",
+        startScan,
+        true
+      ),
+
+      makeButton(
+        "Pause",
+        pauseScan
+      ),
+
+      makeButton(
+        "Export CSV",
+        exportCSV
+      )
+    );
+
+    const logs =
+      document.createElement("pre");
+
+    logs.id =
+      "am-bom-log";
+
+    Object.assign(
+      logs.style,
+      {
+        height: "110px",
+        overflowY: "auto",
+        whiteSpace: "pre-wrap",
+        fontSize: "11px",
+        background: "#101820",
+        padding: "8px"
+      }
+    );
+
+    panel.append(
+      heading,
+      status,
+      controls,
+      logs
+    );
+
+    document.body.appendChild(
+      panel
+    );
+
+    updatePanel();
+  }
+
+  // ============================================================
+  // INITIALISE
+  // Starts the panel and optionally resumes a previously running scan.
+  // ============================================================
+
+  /**
+   * initialise() — Initialises the userscript after the page becomes ready.
+   * Imports legacy audits, creates the panel and resumes scanning when the saved state is running.
+   */
+  async function initialise() {
+    const imported =
+      importOldAudits();
+
+    makePanel();
+
+    if (imported) {
+      log(
+        `Imported ${imported} original audited records`
+      );
+    }
+
+    if (control.running) {
+      log(
+        "Resuming automatic worldwide scan"
+      );
+
+      await sleep(1000);
+
+      runScanner();
+    } else {
+      log(
+        "Ready. Click Start / Resume."
+      );
+    }
+  }
+
+  if (
+    document.readyState ===
+    "loading"
+  ) {
+    document.addEventListener(
+      "DOMContentLoaded",
+      initialise,
+      { once: true }
+    );
+  } else {
+    initialise();
+  }
+
+})();

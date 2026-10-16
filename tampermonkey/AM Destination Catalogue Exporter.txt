@@ -1,0 +1,451 @@
+/*
+ * AM DESTINATION CATALOGUE EXPORTER v0.2 — ANNOTATED GUIDE
+ * =====================================================
+ * PURPOSE
+ *   Read-only Tampermonkey scraper for the Airlines Manager BOM network.
+ *   It discovers two-letter country codes from the game's country selectors,
+ *   visits each country's destination listing, extracts unowned destination
+ *   cards, and downloads the accumulated catalogue as CSV.
+ *
+ * HOW TO USE
+ *   1. Open the network/newline country-selector page for BOM.
+ *   2. Select all seven regions so the script can discover their countries.
+ *   3. Use Tampermonkey's "Start / Resume scan" menu command.
+ *   4. Allow page navigation; use "Show progress", "Pause scan", or
+ *      "Download CSV" at any time. A final CSV downloads on completion.
+ *
+ * DATA AND STATE
+ *   HUB / HUB_ID identify BOM; KEY identifies Tampermonkey persisted state.
+ *   State holds countries, rows, completed, errors, and running. Progress
+ *   survives navigation/reloads because GM_getValue / GM_setValue are used.
+ *   Each destination row includes hub, country, airport identifier/code,
+ *   name, distance, category, purchase price, audit marker, and card text.
+ *
+ * IMPORTANT BEHAVIOUR AND LIMITATIONS
+ *   - Read-only with respect to game transactions: reads DOM, navigates,
+ *     stores local script state, and downloads a CSV; no purchase/audit POST.
+ *   - Fixed to BOM. Not a generic multi-hub exporter.
+ *   - Country discovery is based on currently rendered dropdown options;
+ *     missing regions mean an incomplete worldwide country list.
+ *   - Airport code is inferred from heading text and may be blank if the
+ *     game's markup or heading format changes.
+ *   - A country is marked complete immediately after DOM extraction; there
+ *     is no wait-for-stability mechanism, so partially loaded pages can
+ *     result in incomplete records. Zero-card countries are flagged for
+ *     verification but are still marked complete.
+ *   - The script appends rows without deduplicating them; reset is the
+ *     supported way to clear prior results before a fresh full scan.
+ *   - Comments only have been added. Executable statements are unchanged.
+ */
+
+
+ // ==UserScript==
+ // @name         AM Destination Catalogue Exporter v0.2
+ // @namespace    am-circuit-optimiser
+ // @version      0.2.0
+ // @description  Read-only worldwide BOM destination exporter
+ // @match        https://tycoon.airlines-manager.com/network/newline*
+ // @grant        GM_getValue
+ // @grant        GM_setValue
+ // @grant        GM_registerMenuCommand
+ // @run-at       document-idle
+ // ==/UserScript==
+
+ (() => {
+   "use strict";
+
+   const HUB = "BOM";
+   const HUB_ID = "17532584";
+   const KEY = "am_catalogue_bom_v02";
+   const DELAY_MS = 3500;
+
+   /**
+    * emptyState()
+    * Returns the initial scanner state.
+    * Countries, collected destination rows, completed countries, and errors begin empty; running is false.
+    */
+   const emptyState = () => ({
+     countries: [],
+     rows: [],
+     completed: [],
+     errors: [],
+     running: false
+   });
+
+   /**
+    * load()
+    * Reads the persisted catalogue state using Tampermonkey storage; falls back to an empty state when no saved value exists.
+    */
+   const load = () => GM_getValue(KEY, emptyState());
+   /**
+    * save()
+    * Persists the complete scanner state under the BOM-specific Tampermonkey storage key.
+    */
+   const save = state => GM_setValue(KEY, state);
+
+   const pathPattern =
+     /^\/network\/newline\/(\d+)\/([a-z]{2})\/?$/;
+
+   const current = location.pathname.match(pathPattern);
+
+   // ------------------------------------------
+   // COUNTRY DISCOVERY
+   // ------------------------------------------
+
+   /**
+    * captureCountries()
+    * Collects enabled two-letter country codes from all page select menus, merges them with previously discovered codes, sorts them, and saves any changes.
+    * The user must expose all regions to discover the full set.
+    */
+   function captureCountries() {
+     const state = load();
+     const found = new Set(state.countries);
+
+     // Read country options currently present
+     // in the game's dropdowns.
+     for (const select of document.querySelectorAll("select")) {
+       for (const option of select.options) {
+         const code = option.value.trim().toLowerCase();
+
+         if (/^[a-z]{2}$/.test(code) &&
+             !option.disabled) {
+           found.add(code);
+         }
+       }
+     }
+
+     if (found.size !== state.countries.length) {
+       state.countries = [...found].sort();
+       save(state);
+
+       console.log(
+         `[AM Catalogue] Countries discovered: ${found.size}`
+       );
+     }
+   }
+
+   // Watch for country dropdowns changing when
+   // the user selects a different region.
+   // On the selector page, collect codes now and whenever the UI changes.
+   if (!current) {
+     captureCountries();
+
+     const observer = new MutationObserver(() => {
+       captureCountries();
+     });
+
+     observer.observe(document.body, {
+       childList: true,
+       subtree: true
+     });
+
+     document.addEventListener(
+       "change",
+       () => setTimeout(captureCountries, 300),
+       true
+     );
+   }
+
+   // ------------------------------------------
+   // DESTINATION EXTRACTION
+   // ------------------------------------------
+
+   /**
+    * extract()
+    * Reads the destination cards on the current country page and maps them into CSV-ready records.
+    * Values come from the DOM and dataset attributes; no audits or purchases are performed.
+    */
+   function extract(country) {
+     return [
+       ...document.querySelectorAll(
+         ".airportList [id^='hubListBox']"
+       )
+     ]
+     .filter(el => /^hubListBox\d+$/.test(el.id))
+     .map(el => {
+       const heading = el.querySelector(".hubNameBox");
+
+       const code = heading?.textContent
+         ?.trim()
+         .match(/^([A-Z0-9]{3,4})\s*-/)?.[1] || "";
+
+       return {
+         hub: HUB,
+         hub_id: HUB_ID,
+         country,
+         airport_id: el.id.replace("hubListBox", ""),
+         airport_code: code,
+         airport_name: el.dataset.name || "",
+         distance_km: el.dataset.distance || "",
+         category: el.dataset.category || "",
+         purchase_price: el.dataset.price || "",
+         last_audit: el.dataset.audit || "",
+         card_text:
+           el.innerText || el.textContent?.trim() || ""
+       };
+     });
+   }
+
+   // ------------------------------------------
+   // CSV EXPORT
+   // ------------------------------------------
+
+   /**
+    * downloadCSV()
+    * Serializes the collected rows to a quoted CSV and triggers a browser download.
+    * Column order comes from the first row; no file is produced if there are no rows.
+    */
+   function downloadCSV() {
+     const state = load();
+     const rows = state.rows;
+
+     if (!rows.length) {
+       alert("No destinations collected yet.");
+       return;
+     }
+
+     const columns = Object.keys(rows[0]);
+
+     const escapeCSV = value =>
+       `"${String(value ?? "").replace(/"/g, '""')}"`;
+
+     const csv = [
+       columns.join(","),
+       ...rows.map(row =>
+         columns.map(column =>
+           escapeCSV(row[column])
+         ).join(",")
+       )
+     ].join("\r\n");
+
+     const blob = new Blob([csv], {
+       type: "text/csv;charset=utf-8"
+     });
+
+     const url = URL.createObjectURL(blob);
+     const a = document.createElement("a");
+
+     a.href = url;
+     a.download = `AM_${HUB}_Worldwide_Destinations.csv`;
+
+     document.body.appendChild(a);
+     a.click();
+     a.remove();
+
+     setTimeout(() => URL.revokeObjectURL(url), 5000);
+
+     console.log(
+       `[AM Catalogue] Exported ${rows.length} destinations`
+     );
+   }
+
+   // ------------------------------------------
+   // NAVIGATION AND PROGRESS
+   // ------------------------------------------
+
+   /**
+    * nextCountry()
+    * Finds the first discovered country that has not yet been marked completed, or undefined if all are complete.
+    */
+   function nextCountry(state) {
+     return state.countries.find(
+       code => !state.completed.includes(code)
+     );
+   }
+
+   /**
+    * navigate()
+    * Schedules navigation to the BOM destination page for a country after a delay, but only if the saved running flag is still true.
+    */
+   function navigate(code) {
+     const target =
+       `/network/newline/${HUB_ID}/${code}`;
+
+     setTimeout(() => {
+       if (load().running) {
+         location.assign(target);
+       }
+     }, DELAY_MS);
+   }
+
+   /**
+    * start()
+    * Validates that countries were discovered and some work remains, sets running true, then navigates to the first uncompleted country.
+    */
+   function start() {
+     const state = load();
+
+     if (!state.countries.length) {
+       alert(
+         "No countries discovered. Visit the country " +
+         "selector and select all seven regions first."
+       );
+       return;
+     }
+
+     const next = nextCountry(state);
+
+     if (!next) {
+       alert("All discovered countries have been processed.");
+       return;
+     }
+
+     state.running = true;
+     save(state);
+
+     console.log(
+       `[AM Catalogue] Starting: ${state.countries.length} countries`
+     );
+
+     navigate(next);
+   }
+
+   /**
+    * pause()
+    * Sets the persisted running flag false so later delayed navigation will not proceed.
+    */
+   function pause() {
+     const state = load();
+     state.running = false;
+     save(state);
+     console.log("[AM Catalogue] Paused");
+   }
+
+   /**
+    * reset()
+    * After user confirmation, clears collected rows, completion flags, and errors while retaining the discovered country list.
+    */
+   function reset() {
+     if (!confirm(
+       "Delete collected destinations and progress? " +
+       "The discovered country list will be retained."
+     )) return;
+
+     const state = load();
+
+     save({
+       ...emptyState(),
+       countries: state.countries
+     });
+
+     console.log("[AM Catalogue] Scan reset");
+   }
+
+   /**
+    * status()
+    * Prints the current scan totals, error records, and discovered country codes in the browser console.
+    */
+   function status() {
+     const state = load();
+
+     console.table({
+       hub: HUB,
+       countries: state.countries.length,
+       completed: state.completed.length,
+       destinations: state.rows.length,
+       errors: state.errors.length,
+       running: state.running
+     });
+
+     console.log("Failed countries:", state.errors);
+     console.log("Country codes:", state.countries);
+   }
+
+   // ------------------------------------------
+   // TAMPERMONKEY COMMANDS
+   // ------------------------------------------
+
+   // These commands appear in the Tampermonkey menu (not a page panel).
+   GM_registerMenuCommand("Start / Resume scan", start);
+   GM_registerMenuCommand("Pause scan", pause);
+   GM_registerMenuCommand("Show progress", status);
+   GM_registerMenuCommand("Download CSV", downloadCSV);
+   GM_registerMenuCommand("Reset scan", reset);
+
+   // ------------------------------------------
+   // PROCESS COUNTRY PAGE
+   // ------------------------------------------
+
+   // The remainder runs only on a matching country URL for the BOM hub.
+   if (!current) return;
+
+   const [, pageHubId, country] = current;
+
+   if (pageHubId !== HUB_ID) return;
+
+   const state = load();
+
+   if (!state.running) return;
+
+   if (!state.countries.includes(country)) {
+     console.warn("[AM Catalogue] Unexpected country", country);
+     pause();
+     return;
+   }
+
+   if (state.completed.includes(country)) {
+     const next = nextCountry(state);
+
+     if (next) navigate(next);
+     else {
+       pause();
+       downloadCSV();
+     }
+
+     return;
+   }
+
+   // Extract currently rendered cards; page-load completeness is not checked.
+   const rows = extract(country);
+
+   // Guard against incomplete or unexpected pages.
+   if (!document.querySelector(".airportList")) {
+     state.errors.push({
+       country,
+       reason: "Airport list missing"
+     });
+
+     state.running = false;
+     save(state);
+
+     console.error(
+       `[AM Catalogue] ${country}: unexpected page. Scan paused.`
+     );
+
+     return;
+   }
+
+   // Commit rows and mark the country completed for resume/skip logic.
+   state.rows.push(...rows);
+   state.completed.push(country);
+
+   // A country with no unowned routes may legitimately
+   // have zero destination cards.
+   if (!rows.length) {
+     state.errors.push({
+       country,
+       reason: "Zero cards - requires verification"
+     });
+   }
+
+   save(state);
+
+   console.log(
+     `[AM Catalogue] ${country.toUpperCase()}: ` +
+     `${rows.length} routes | ` +
+     `${state.completed.length}/${state.countries.length} countries`
+   );
+
+   const next = nextCountry(state);
+
+   if (next) {
+     navigate(next);
+   } else {
+     state.running = false;
+     save(state);
+
+     console.log("[AM Catalogue] Worldwide scan complete");
+     status();
+     downloadCSV();
+   }
+ })();
