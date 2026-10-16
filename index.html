@@ -1,19 +1,14 @@
-<!DOCTYPE html>
+
+<!doctype html>
 <html lang="en">
-
 <head>
-  <meta charset="UTF-8">
-
-  <meta
-    name="viewport"
-    content="width=device-width, initial-scale=1.0"
-  >
-
-  <title>
-    Airlines Manager Price Optimiser
-  </title>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Airlines Manager Rotation Optimiser</title>
+  <link rel="stylesheet" href="css/style.css">
 
   <style>
+    /* Visual theme matched to airlines_manager.html (Price Optimiser). */
     :root {
       --bg: #0b0d10;
       --panel: #13161b;
@@ -28,1773 +23,433 @@
       --success: #72e39a;
     }
 
-    * {
-      box-sizing: border-box;
-    }
-
+    *, *::before, *::after { box-sizing: border-box; }
+    html { color-scheme: dark; }
     body {
       margin: 0;
       min-height: 100vh;
-
-      font-family:
-        Inter,
-        system-ui,
-        -apple-system,
-        BlinkMacSystemFont,
-        "Segoe UI",
-        sans-serif;
-
-      background:
-        radial-gradient(
-          circle at top,
-          #171b21 0,
-          var(--bg) 42%
-        );
-
+      font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: radial-gradient(circle at top, #171b21 0, var(--bg) 42%);
       color: var(--text);
+      line-height: 1.55;
     }
-
-    button,
-    input {
-      font: inherit;
-    }
-
-    .page {
+    body > main {
       width: min(1180px, calc(100% - 40px));
+      max-width: 1180px;
       margin: 0 auto;
       padding: 42px 0 70px;
     }
-
-    .topbar {
+    main > header {
       display: flex;
-      justify-content: space-between;
       align-items: flex-start;
+      justify-content: space-between;
       gap: 30px;
       margin-bottom: 32px;
+      padding: 0;
+      background: transparent;
+      border: 0;
+      box-shadow: none;
     }
-
     .eyebrow {
-      margin-bottom: 7px;
-
+      margin: 0 0 7px;
       color: var(--accent);
-
       font-size: 12px;
       font-weight: 800;
       letter-spacing: .16em;
       text-transform: uppercase;
     }
-
     h1 {
       margin: 0;
-
+      color: var(--text);
       font-size: clamp(30px, 5vw, 46px);
       line-height: 1.05;
       letter-spacing: -.035em;
     }
-
-    .subtitle {
-      max-width: 650px;
+    main > header p:not(.eyebrow) {
       margin: 12px 0 0;
-
       color: var(--muted);
-
       font-size: 15px;
-      line-height: 1.6;
     }
-
-    .status-pill {
+    .pill {
       display: inline-flex;
       align-items: center;
-      gap: 8px;
-
       padding: 9px 13px;
-
       border: 1px solid var(--border);
       border-radius: 999px;
-
       background: var(--panel);
-
       color: var(--muted);
-
       font-size: 13px;
       font-weight: 700;
-
       white-space: nowrap;
     }
-
-    .status-dot {
-      width: 8px;
-      height: 8px;
-
-      border-radius: 50%;
-
-      background: var(--muted);
-    }
-
-    .status-pill.running .status-dot {
-      background: var(--accent);
-      box-shadow:
-        0 0 12px rgba(204,255,0,.55);
-    }
-
-    .status-pill.complete .status-dot {
-      background: var(--success);
-    }
-
-    .status-pill.failed .status-dot {
-      background: var(--danger);
-    }
-
-    .card {
-      border: 1px solid var(--border);
-      border-radius: 18px;
-
-      background:
-        linear-gradient(
-          180deg,
-          rgba(255,255,255,.025),
-          transparent
-        ),
-        var(--panel);
-
-      box-shadow:
-        0 18px 50px rgba(0,0,0,.22);
-    }
-
-    .scan-card {
-      padding: 26px;
-    }
-
-    .scan-heading {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 20px;
-
-      margin-bottom: 24px;
-    }
-
-    .scan-heading h2 {
-      margin: 0;
-
-      font-size: 20px;
-      letter-spacing: -.02em;
-    }
-
-    .scan-id {
-      margin-top: 5px;
-
-      color: var(--muted);
-
-      font-family: ui-monospace, monospace;
-      font-size: 11px;
-    }
-
-    .progress-section + .progress-section {
-      margin-top: 25px;
-    }
-
-    .progress-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-end;
-      gap: 15px;
-
-      margin-bottom: 9px;
-    }
-
-    .progress-title {
-      font-size: 15px;
-      font-weight: 750;
-    }
-
-    .progress-meta {
-      margin-top: 4px;
-
-      color: var(--muted);
-
-      font-size: 12px;
-    }
-
-    .progress-percent {
-      font-size: 14px;
-      font-weight: 800;
-    }
-
-    .progress-track {
-      position: relative;
-
-      width: 100%;
-      height: 11px;
-
-      overflow: hidden;
-
-      border: 1px solid #303741;
-      border-radius: 999px;
-
-      background: #090b0e;
-    }
-
-    .progress-fill {
-      width: 0;
-      height: 100%;
-
-      border-radius: inherit;
-
-      background: var(--accent);
-
-      transition: width .35s ease;
-    }
-
-    .stats {
+    .metrics {
       display: grid;
-      grid-template-columns:
-        repeat(4, minmax(0, 1fr));
-
+      grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 12px;
-
-      margin-top: 26px;
+      margin: 0 0 24px;
     }
-
-    .stat {
-      padding: 16px;
-
+    .metrics article {
+      padding: 18px;
       border: 1px solid var(--border);
-      border-radius: 13px;
-
+      border-radius: 14px;
       background: var(--panel-2);
+      box-shadow: none;
     }
-
-    .stat-label {
+    .metrics small {
+      display: block;
       color: var(--muted);
-
       font-size: 11px;
       font-weight: 750;
       letter-spacing: .05em;
       text-transform: uppercase;
     }
-
-    .stat-value {
+    .metrics strong {
+      display: block;
       margin-top: 6px;
-
-      font-size: 23px;
+      color: var(--text);
+      font-size: 26px;
       font-weight: 800;
       letter-spacing: -.03em;
     }
-
-    .controls {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-
-      margin-top: 25px;
+    .panel {
+      margin: 0 0 24px;
+      padding: 26px;
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      background: linear-gradient(180deg, rgba(255,255,255,.025), transparent), var(--panel);
+      box-shadow: 0 18px 50px rgba(0,0,0,.22);
+      color: var(--text);
     }
-
-    .btn {
+    .panel h2 {
+      margin: 0 0 20px;
+      font-size: 20px;
+      font-weight: 750;
+      letter-spacing: -.02em;
+      color: var(--text);
+    }
+    .panel h3 {
+      margin: 22px 0 10px;
+      color: var(--text);
+      font-size: 16px;
+      font-weight: 750;
+    }
+    .hint { color: var(--muted); font-size: 13px; line-height: 1.7; }
+    .inputs {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+      margin: 0 0 20px;
+    }
+    .inputs label {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 650;
+    }
+    button, input, select { font: inherit; }
+    input, select {
+      width: 100%;
       min-height: 43px;
-      padding: 0 18px;
-
+      padding: 9px 12px;
       border: 1px solid var(--border);
       border-radius: 10px;
-
       background: var(--panel-2);
-
       color: var(--text);
-
-      font-weight: 750;
-
-      cursor: pointer;
-
-      transition:
-        transform .15s ease,
-        border-color .15s ease,
-        background .15s ease;
+      outline-color: var(--accent);
     }
-
-    .btn:hover:not(:disabled) {
-      transform: translateY(-1px);
-      border-color: #4a535f;
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+      margin: 16px 0;
     }
-
-    .btn-primary {
-      border-color: var(--accent);
-
+    button {
+      min-height: 43px;
+      padding: 9px 18px;
+      border: 1px solid var(--accent);
+      border-radius: 10px;
       background: var(--accent);
-
       color: #0a0c0f;
+      font-weight: 750;
+      cursor: pointer;
+      transition: transform .15s ease, border-color .15s ease, background .15s ease;
     }
-
-    .btn-primary:hover:not(:disabled) {
-      background: #d7ff35;
+    button:hover:not(:disabled) { transform: translateY(-1px); background: #d7ff35; }
+    button.secondary {
+      border-color: var(--border);
+      background: var(--panel-2);
+      color: var(--text);
     }
-
-    .btn:disabled {
-      opacity: .38;
-      cursor: not-allowed;
-    }
-
-    .activity {
-      margin-top: 18px;
+    button.secondary:hover:not(:disabled) { border-color: #4a535f; background: #222831; }
+    button:disabled { opacity: .38; cursor: not-allowed; }
+    #status {
       padding: 15px 17px;
-
+      margin: 18px 0 0;
       border: 1px solid var(--border);
       border-radius: 11px;
-
       background: #0d1014;
-    }
-
-    .activity-title {
-      margin-bottom: 5px;
-
       color: var(--muted);
-
-      font-size: 11px;
+      font-size: 13px;
+    }
+    .scroll {
+      width: 100%;
+      overflow-x: auto;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: var(--panel);
+    }
+    table { width: 100%; border-collapse: collapse; color: var(--text); }
+    th, td {
+      padding: 12px 10px;
+      border-bottom: 1px solid var(--border);
+      font-size: 12px;
+      text-align: left;
+    }
+    th {
+      background: #11151a;
+      color: var(--muted);
+      font-size: 10px;
       font-weight: 750;
-      letter-spacing: .06em;
+      letter-spacing: .05em;
       text-transform: uppercase;
+      white-space: nowrap;
     }
-
-    .activity-text {
+    tbody tr:hover { background: rgba(255,255,255,.025); }
+    tbody tr:last-child td { border-bottom: 0; }
+    #aircraft-configurations-panel > summary {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      cursor: pointer;
+      list-style: none;
+    }
+    #aircraft-configurations-panel > summary::-webkit-details-marker { display: none; }
+    #aircraft-configurations-panel > summary h2 { margin: 0; }
+    .expand-label {
+      flex: 0 0 auto;
+      padding: 9px 15px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--panel-2);
+      color: var(--text);
       font-size: 13px;
-      line-height: 1.5;
+      font-weight: 750;
     }
-
-    .activity-text.error {
-      color: var(--danger);
+    #aircraft-configurations-panel > summary:hover .expand-label { border-color: var(--accent); }
+    #aircraft-configurations-panel[open] .expand-label { color: var(--accent); }
+    #aircraft-configurations-panel > .config-content { margin-top: 20px; }
+    footer { color: var(--muted); font-size: 12px; text-align: center; padding: 8px 0; }
+    @media (max-width: 760px) {
+      body > main { width: calc(100% - 24px); padding-top: 25px; }
+      main > header { flex-direction: column; gap: 14px; }
+      .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .inputs { grid-template-columns: 1fr; }
+      .panel { padding: 18px; }
+      #aircraft-configurations-panel > summary { align-items: flex-start; }
     }
-
-    .activity-text.success {
-      color: var(--success);
-    }
-
-    .spinner {
-      display: inline-block;
-
-      width: 12px;
-      height: 12px;
-
-      margin-right: 8px;
-
-      border: 2px solid rgba(255,255,255,.25);
-      border-top-color: var(--accent);
-      border-radius: 50%;
-
-      vertical-align: -2px;
-
-      animation:
-        spin .75s linear infinite;
-    }
-
-    @keyframes spin {
-      to {
-        transform: rotate(360deg);
-      }
-    }
-
-    .hidden {
-      display: none !important;
-    }
-
-    .config-warning {
-      margin-bottom: 20px;
-      padding: 15px 18px;
-
-      border: 1px solid rgba(255,191,71,.4);
-      border-radius: 12px;
-
-      background: rgba(255,191,71,.07);
-
-      color: #ffd58a;
-
-      font-size: 13px;
-      line-height: 1.55;
-    }
-
-    @media (
-      max-width: 760px
-    ) {
-      .page {
-        width:
-          min(100% - 24px, 1180px);
-
-        padding-top: 25px;
-      }
-
-      .topbar {
-        flex-direction: column;
-      }
-
-      .stats {
-        grid-template-columns:
-          repeat(2, minmax(0, 1fr));
-      }
-
-      .scan-heading {
-        align-items: flex-start;
-        flex-direction: column;
-      }
+    @media (max-width: 460px) {
+      .metrics { grid-template-columns: 1fr; }
+      #aircraft-configurations-panel > summary { flex-direction: column; }
     }
   </style>
+
 </head>
 
-
 <body>
-
-  <main class="page">
-
-    <header class="topbar">
-
+  <main>
+    <header>
       <div>
-        <div class="eyebrow">
-          Airlines Manager
-        </div>
-
-        <h1>
-          Price Optimiser
-        </h1>
-
-        <p class="subtitle">
-          Scan your route data, calculate Economy
-          and Cargo target prices and review changes
-          before anything is applied.
-        </p>
+        <p class="eyebrow">AIRLINES MANAGER · <span id="active-hub">BOM</span></p>
+        <h1>Rotation Optimiser</h1>
+        <p>Mixed-fleet planning · Browser-based baseline</p>
       </div>
-
-
-      <div
-        id="statusPill"
-        class="status-pill"
-      >
-        <span class="status-dot"></span>
-
-        <span id="statusText">
-          Loading
-        </span>
-      </div>
-
+      <span class="pill">v1.0 · Read-only</span>
     </header>
 
-
-    <div
-      id="configWarning"
-      class="config-warning hidden"
-    >
-      Add your Supabase project URL and browser-safe
-      publishable/anon key to the configuration section
-      near the top of the JavaScript.
-    </div>
-
-
-    <section class="card scan-card">
-
-      <div class="scan-heading">
-
-        <div>
-          <h2>
-            Route scan
-          </h2>
-
-          <div
-            id="scanIdText"
-            class="scan-id"
-          ></div>
-        </div>
-
-        <div id="overallText">
-          Loading…
-        </div>
-
-      </div>
-
-
-      <!-- AUDIT -->
-
-      <div class="progress-section">
-
-        <div class="progress-header">
-
-          <div>
-            <div class="progress-title">
-              Audit prices
-            </div>
-
-            <div
-              id="auditMeta"
-              class="progress-meta"
-            >
-              —
-            </div>
-          </div>
-
-          <div
-            id="auditPercent"
-            class="progress-percent"
-          >
-            0%
-          </div>
-
-        </div>
-
-
-        <div class="progress-track">
-
-          <div
-            id="auditBar"
-            class="progress-fill"
-          ></div>
-
-        </div>
-
-      </div>
-
-
-      <!-- PRICING -->
-
-      <div class="progress-section">
-
-        <div class="progress-header">
-
-          <div>
-            <div class="progress-title">
-              Pricing & demand
-            </div>
-
-            <div
-              id="pricingMeta"
-              class="progress-meta"
-            >
-              —
-            </div>
-          </div>
-
-          <div
-            id="pricingPercent"
-            class="progress-percent"
-          >
-            0%
-          </div>
-
-        </div>
-
-
-        <div class="progress-track">
-
-          <div
-            id="pricingBar"
-            class="progress-fill"
-          ></div>
-
-        </div>
-
-      </div>
-
-
-      <!-- STATS -->
-
-      <div class="stats">
-
-        <div class="stat">
-          <div class="stat-label">
-            Audit routes
-          </div>
-
-          <div
-            id="auditRoutes"
-            class="stat-value"
-          >
-            0
-          </div>
-        </div>
-
-
-        <div class="stat">
-          <div class="stat-label">
-            Pricing routes
-          </div>
-
-          <div
-            id="pricingRoutes"
-            class="stat-value"
-          >
-            0
-          </div>
-        </div>
-
-
-        <div class="stat">
-          <div class="stat-label">
-            Pages complete
-          </div>
-
-          <div
-            id="pagesComplete"
-            class="stat-value"
-          >
-            0
-          </div>
-        </div>
-
-
-        <div class="stat">
-          <div class="stat-label">
-            Elapsed
-          </div>
-
-          <div
-            id="elapsed"
-            class="stat-value"
-          >
-            00:00
-          </div>
-        </div>
-
-      </div>
-
-
-      <!-- CONTROLS -->
-
-      <div class="controls">
-
-        <button
-          id="continueButton"
-          class="btn btn-primary"
-          type="button"
-        >
-          Continue Scan
-        </button>
-
-
-        <button
-          id="pauseButton"
-          class="btn"
-          type="button"
-          disabled
-        >
-          Pause
-        </button>
-
-
-        <button
-          id="refreshButton"
-          class="btn"
-          type="button"
-        >
-          Refresh Status
-        </button>
-
-
-        <button
-          id="optimiserButton"
-          class="btn"
-          type="button"
-          disabled
-        >
-          View Optimiser
-        </button>
-
-      </div>
-
-
-      <!-- ACTIVITY -->
-
-      <div class="activity">
-
-        <div class="activity-title">
-          Activity
-        </div>
-
-        <div
-          id="activityText"
-          class="activity-text"
-        >
-          Loading scan status…
-        </div>
-
-      </div>
-
+    <section class="metrics">
+      <article>
+        <small>Eligible owned routes</small>
+        <strong id="routes">—</strong>
+      </article>
+      <article>
+        <small>Aircraft models</small>
+        <strong id="models">—</strong>
+      </article>
+      <article>
+        <small>Rotation limit</small>
+        <strong>168h</strong>
+      </article>
     </section>
 
+    <section class="panel">
+      <h2>Optimisation settings</h2>
+
+      <div class="inputs">
+        <label>
+          Hub
+          <select id="hub-select" disabled aria-label="Select hub">
+            <option value="BOM">BOM</option>
+          </select>
+        </label>
+        <label>
+          Maximum seven-aircraft groups (blank = unlimited)
+          <input
+            id="groups"
+            type="number"
+            min="1"
+            step="1"
+            value=""
+            placeholder="Unlimited"
+          >
+        </label>
+      </div>
+
+      <p class="hint">
+        Scenario A: Complete selected-hub schedule rebuild.
+        All usable aircraft models are evaluated.
+
+        A380-800 uses fixed 852E + 4C.
+        A350-900ULR uses fixed 430E + 1C.
+
+        Other passenger aircraft use automatic Economy-first
+        configurations. Dedicated freighters use cargo-only
+        configurations based on whole tonnes of payload.
+
+        Every rotation group contains seven identical aircraft
+        with the same configuration.
+
+        Total daily demand is shared across all proposed groups.
+        BKK, CGK and DEL remain excluded as destinations. Hubs are discovered automatically from the route and pricing datasets; demand is optimised separately for each hub.
+      </p>
+
+      <h3>Shared X380Plus allocation</h3>
+      <p id="x380-status" class="hint">10 X380Plus aircraft available globally (one seven-aircraft group). No confirmed reservation.</p>
+      <div class="actions">
+        <button id="confirm-x380" class="secondary" disabled>Confirm X380Plus for selected hub</button>
+        <button id="release-x380" class="secondary" disabled>Release X380Plus reservation</button>
+      </div>
+
+      <div class="actions">
+        <button id="run" disabled>Run optimiser</button>
+        <button id="stop" class="secondary" disabled>Stop</button>
+        <button id="download" class="secondary" disabled>
+          Export rotations TXT
+        </button>
+      </div>
+
+      <p id="status" role="status">
+        Loading route, pricing and aircraft data…
+      </p>
+    </section>
+
+    <section class="panel" aria-label="Aircraft configurations — all models">
+      <details id="aircraft-configurations-panel">
+        <summary>
+          <h2>Aircraft configurations — all models</h2>
+          <span class="expand-label" aria-hidden="true">Expand / Collapse</span>
+        </summary>
+        <div class="config-content">
+        <div class="scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Aircraft</th>
+                <th>Economy</th>
+                <th>Cargo</th>
+                <th>Category</th>
+                <th>Range (km)</th>
+                <th>Speed (km/h)</th>
+              </tr>
+            </thead>
+            <tbody id="fleet-configurations"></tbody>
+          </table>
+        </div>
+        </div>
+      </details>
+    </section>
+
+    <section class="panel">
+      <h2>Fleet allocation</h2>
+      <p class="hint">
+        Seven aircraft per group. Revenue is provisional weekly gross.
+      </p>
+
+      <div class="scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Aircraft</th>
+              <th>Configuration</th>
+              <th>Groups</th>
+              <th>Aircraft used</th>
+              <th>Services</th>
+              <th>Weekly gross ($)</th>
+            </tr>
+          </thead>
+          <tbody id="fleet-results"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Network demand</h2>
+      <p class="hint">
+        Daily demand before and after proposed schedules.
+        Demand calculations follow the engine's current
+        two-direction return-service assumption.
+      </p>
+
+      <div class="scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Demand</th>
+              <th>Starting</th>
+              <th>Allocated</th>
+              <th>Remaining</th>
+              <th>Remaining %</th>
+            </tr>
+          </thead>
+          <tbody id="demand-results"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Proposed rotations</h2>
+      <p class="hint">
+        All passenger and dedicated cargo aircraft are considered.
+        Exploratory greedy baseline.
+        No rotations have passed game preflight.
+      </p>
+
+      <div class="scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Group</th>
+              <th>Aircraft</th>
+              <th>Configuration</th>
+              <th>Hours</th>
+              <th>Destinations</th>
+              <th>Weekly gross ($)</th>
+            </tr>
+          </thead>
+          <tbody id="results"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <footer>
+      No game purchases, audits, fares or schedules
+      are changed by this application.
+    </footer>
   </main>
 
-
-  <script>
-    /* =========================================================
-       CONFIGURATION
-       =========================================================
-
-       Use ONLY the browser-safe Supabase publishable/anon key.
-
-       NEVER put any of these here:
-
-       AM_USERNAME
-       AM_PASSWORD
-       AM_SERVICE_ROLE_KEY
-       sb_secret_...
-
-    ========================================================= */
-
-    const SUPABASE_URL =
-      "https://YOUR-PROJECT.supabase.co";
-
-    const SUPABASE_PUBLISHABLE_KEY =
-      "YOUR-PUBLISHABLE-OR-ANON-KEY";
-
-
-    /*
-     * Existing scan.
-     *
-     * We deliberately continue the scan we've already
-     * populated with Audit pages 1–10.
-     */
-    const SCAN_ID =
-      "39c7c712-3fc1-46da-bcec-9165e013c7ce";
-
-
-    /*
-     * Existing Edge Function.
-     */
-    const FUNCTION_NAME =
-      "am-auth-test";
-
-
-    const BATCH_SIZE = 5;
-
-
-    /* =========================================================
-       STATE
-    ========================================================= */
-
-    let running = false;
-    let pauseRequested = false;
-
-    let latestStatus = null;
-
-    let timerStartedAt = null;
-    let timerInterval = null;
-
-
-    /* =========================================================
-       ELEMENTS
-    ========================================================= */
-
-    const statusPill =
-      document.getElementById(
-        "statusPill"
-      );
-
-    const statusText =
-      document.getElementById(
-        "statusText"
-      );
-
-    const scanIdText =
-      document.getElementById(
-        "scanIdText"
-      );
-
-    const overallText =
-      document.getElementById(
-        "overallText"
-      );
-
-    const auditMeta =
-      document.getElementById(
-        "auditMeta"
-      );
-
-    const pricingMeta =
-      document.getElementById(
-        "pricingMeta"
-      );
-
-    const auditPercent =
-      document.getElementById(
-        "auditPercent"
-      );
-
-    const pricingPercent =
-      document.getElementById(
-        "pricingPercent"
-      );
-
-    const auditBar =
-      document.getElementById(
-        "auditBar"
-      );
-
-    const pricingBar =
-      document.getElementById(
-        "pricingBar"
-      );
-
-    const auditRoutes =
-      document.getElementById(
-        "auditRoutes"
-      );
-
-    const pricingRoutes =
-      document.getElementById(
-        "pricingRoutes"
-      );
-
-    const pagesComplete =
-      document.getElementById(
-        "pagesComplete"
-      );
-
-    const elapsed =
-      document.getElementById(
-        "elapsed"
-      );
-
-    const activityText =
-      document.getElementById(
-        "activityText"
-      );
-
-    const continueButton =
-      document.getElementById(
-        "continueButton"
-      );
-
-    const pauseButton =
-      document.getElementById(
-        "pauseButton"
-      );
-
-    const refreshButton =
-      document.getElementById(
-        "refreshButton"
-      );
-
-    const optimiserButton =
-      document.getElementById(
-        "optimiserButton"
-      );
-
-    const configWarning =
-      document.getElementById(
-        "configWarning"
-      );
-
-
-    scanIdText.textContent =
-      `Scan ${SCAN_ID}`;
-
-
-    /* =========================================================
-       CONFIG CHECK
-    ========================================================= */
-
-    function configurationIsValid() {
-
-      return (
-        SUPABASE_URL.startsWith(
-          "https://"
-        ) &&
-
-        !SUPABASE_URL.includes(
-          "YOUR-PROJECT"
-        ) &&
-
-        SUPABASE_PUBLISHABLE_KEY &&
-
-        !SUPABASE_PUBLISHABLE_KEY.includes(
-          "YOUR-PUBLISHABLE"
-        )
-      );
-    }
-
-
-    /* =========================================================
-       FUNCTION URL
-    ========================================================= */
-
-    function functionUrl(
-      params = {}
-    ) {
-
-      const url =
-        new URL(
-          `${SUPABASE_URL}/functions/v1/${FUNCTION_NAME}`
-        );
-
-
-      for (
-        const [
-          key,
-          value
-        ]
-        of Object.entries(params)
-      ) {
-
-        if (
-          value !== null &&
-          value !== undefined &&
-          value !== ""
-        ) {
-          url.searchParams.set(
-            key,
-            String(value)
-          );
-        }
-      }
-
-
-      return url.toString();
-    }
-
-
-    /* =========================================================
-       EDGE FUNCTION REQUEST
-    ========================================================= */
-
-    async function callFunction(
-      params
-    ) {
-
-      const response =
-        await fetch(
-          functionUrl(
-            params
-          ),
-          {
-            method: "GET",
-
-            headers: {
-              "apikey":
-                SUPABASE_PUBLISHABLE_KEY,
-
-              "Authorization":
-                `Bearer ${SUPABASE_PUBLISHABLE_KEY}`,
-            },
-          }
-        );
-
-
-      let result;
-
-
-      try {
-        result =
-          await response.json();
-
-      } catch {
-        throw new Error(
-          `Edge Function returned HTTP ${response.status} with an invalid JSON response`
-        );
-      }
-
-
-      if (
-        !response.ok
-      ) {
-
-        throw new Error(
-          result?.message ||
-          result?.error ||
-          `HTTP ${response.status}`
-        );
-      }
-
-
-      return result;
-    }
-
-
-    /* =========================================================
-       FORMATTING
-    ========================================================= */
-
-    function formatNumber(
-      value
-    ) {
-
-      return Number(
-        value || 0
-      ).toLocaleString(
-        "en-GB"
-      );
-    }
-
-
-    function percentage(
-      complete,
-      total
-    ) {
-
-      if (!total) {
-        return 0;
-      }
-
-
-      return Math.min(
-        100,
-        Math.round(
-          complete /
-          total *
-          100
-        )
-      );
-    }
-
-
-    /* =========================================================
-       ACTIVITY
-    ========================================================= */
-
-    function setActivity(
-      message,
-      type = ""
-    ) {
-
-      activityText.className =
-        "activity-text";
-
-
-      if (type) {
-        activityText.classList.add(
-          type
-        );
-      }
-
-
-      activityText.innerHTML =
-        message;
-    }
-
-
-    /* =========================================================
-       TIMER
-    ========================================================= */
-
-    function startTimer() {
-
-      if (
-        timerStartedAt
-      ) {
-        return;
-      }
-
-
-      timerStartedAt =
-        Date.now();
-
-
-      timerInterval =
-        setInterval(
-          updateTimer,
-          1000
-        );
-
-
-      updateTimer();
-    }
-
-
-    function stopTimer() {
-
-      if (
-        timerInterval
-      ) {
-        clearInterval(
-          timerInterval
-        );
-      }
-
-
-      timerInterval = null;
-    }
-
-
-    function updateTimer() {
-
-      if (
-        !timerStartedAt
-      ) {
-        elapsed.textContent =
-          "00:00";
-
-        return;
-      }
-
-
-      const seconds =
-        Math.floor(
-          (
-            Date.now() -
-            timerStartedAt
-          ) /
-          1000
-        );
-
-
-      const minutes =
-        Math.floor(
-          seconds / 60
-        );
-
-
-      const remainder =
-        seconds % 60;
-
-
-      elapsed.textContent =
-        `${String(minutes).padStart(2, "0")}:${String(remainder).padStart(2, "0")}`;
-    }
-
-
-    /* =========================================================
-       STATUS PILL
-    ========================================================= */
-
-    function setStatusPill(
-      status
-    ) {
-
-      statusPill.className =
-        "status-pill";
-
-
-      if (
-        status === "complete"
-      ) {
-
-        statusPill.classList.add(
-          "complete"
-        );
-
-        statusText.textContent =
-          "Complete";
-
-        return;
-      }
-
-
-      if (
-        status === "failed"
-      ) {
-
-        statusPill.classList.add(
-          "failed"
-        );
-
-        statusText.textContent =
-          "Attention required";
-
-        return;
-      }
-
-
-      if (
-        running
-      ) {
-
-        statusPill.classList.add(
-          "running"
-        );
-
-        statusText.textContent =
-          "Scanning";
-
-        return;
-      }
-
-
-      statusText.textContent =
-        "Paused";
-    }
-
-
-    /* =========================================================
-       RENDER PROGRESS
-    ========================================================= */
-
-    function renderStatus(
-      result
-    ) {
-
-      latestStatus =
-        result;
-
-
-      const audit =
-        result.progress.audit;
-
-      const pricing =
-        result.progress.pricing;
-
-
-      const auditPct =
-        percentage(
-          audit.pagesComplete,
-          audit.totalPages
-        );
-
-
-      const pricingPct =
-        percentage(
-          pricing.pagesComplete,
-          pricing.totalPages
-        );
-
-
-      auditMeta.textContent =
-        `${audit.pagesComplete} of ${audit.totalPages} pages · ${formatNumber(audit.routes)} routes`;
-
-
-      pricingMeta.textContent =
-        `${pricing.pagesComplete} of ${pricing.totalPages} pages · ${formatNumber(pricing.routes)} routes`;
-
-
-      auditPercent.textContent =
-        `${auditPct}%`;
-
-      pricingPercent.textContent =
-        `${pricingPct}%`;
-
-
-      auditBar.style.width =
-        `${auditPct}%`;
-
-      pricingBar.style.width =
-        `${pricingPct}%`;
-
-
-      auditRoutes.textContent =
-        formatNumber(
-          audit.routes
-        );
-
-      pricingRoutes.textContent =
-        formatNumber(
-          pricing.routes
-        );
-
-
-      pagesComplete.textContent =
-        formatNumber(
-          audit.pagesComplete +
-          pricing.pagesComplete
-        );
-
-
-      const totalPages =
-        audit.totalPages +
-        pricing.totalPages;
-
-
-      const completedPages =
-        audit.pagesComplete +
-        pricing.pagesComplete;
-
-
-      overallText.textContent =
-        `${completedPages} / ${totalPages} pages`;
-
-
-      optimiserButton.disabled =
-        !result.complete;
-
-
-      if (
-        result.complete
-      ) {
-
-        continueButton.disabled =
-          true;
-
-        pauseButton.disabled =
-          true;
-
-        setStatusPill(
-          "complete"
-        );
-
-      } else {
-
-        continueButton.disabled =
-          running;
-
-        pauseButton.disabled =
-          !running;
-
-        setStatusPill(
-          "running"
-        );
-      }
-    }
-
-
-    /* =========================================================
-       LOAD STATUS
-    ========================================================= */
-
-    async function loadStatus() {
-
-      if (
-        !configurationIsValid()
-      ) {
-
-        configWarning.classList.remove(
-          "hidden"
-        );
-
-        setActivity(
-          "Supabase configuration is required.",
-          "error"
-        );
-
-        continueButton.disabled =
-          true;
-
-        refreshButton.disabled =
-          true;
-
-        return null;
-      }
-
-
-      refreshButton.disabled =
-        true;
-
-
-      try {
-
-        const result =
-          await callFunction({
-            action:
-              "status",
-
-            scanId:
-              SCAN_ID,
-          });
-
-
-        renderStatus(
-          result
-        );
-
-
-        if (
-          result.complete
-        ) {
-
-          setActivity(
-            "Scan complete. The optimiser data is ready.",
-            "success"
-          );
-
-        } else {
-
-          const audit =
-            result.progress.audit;
-
-          const pricing =
-            result.progress.pricing;
-
-
-          if (
-            audit.pagesComplete <
-            audit.totalPages
-          ) {
-
-            setActivity(
-              `Ready to continue Audit from page ${audit.nextPage}.`
-            );
-
-          } else {
-
-            setActivity(
-              `Audit complete. Ready to continue Pricing from page ${pricing.nextPage}.`
-            );
-          }
-        }
-
-
-        return result;
-
-      } catch (
-        error
-      ) {
-
-        setStatusPill(
-          "failed"
-        );
-
-
-        setActivity(
-          error.message,
-          "error"
-        );
-
-
-        throw error;
-
-      } finally {
-
-        refreshButton.disabled =
-          false;
-      }
-    }
-
-
-    /* =========================================================
-       RUN SCAN
-    ========================================================= */
-
-    async function runScan() {
-
-      if (
-        running
-      ) {
-        return;
-      }
-
-
-      running = true;
-      pauseRequested = false;
-
-
-      continueButton.disabled =
-        true;
-
-      pauseButton.disabled =
-        false;
-
-      refreshButton.disabled =
-        true;
-
-
-      startTimer();
-
-      setStatusPill(
-        "running"
-      );
-
-
-      try {
-
-        while (
-          running &&
-          !pauseRequested
-        ) {
-
-          /*
-           * We intentionally don't specify mode or startPage.
-           *
-           * The Edge Function itself decides:
-           *
-           * 1. first incomplete Audit page;
-           * 2. then first incomplete Pricing page.
-           */
-
-          setActivity(
-            `<span class="spinner"></span>Scanning next batch…`
-          );
-
-
-          const result =
-            await callFunction({
-              action:
-                "batch",
-
-              scanId:
-                SCAN_ID,
-
-              batchSize:
-                BATCH_SIZE,
-            });
-
-
-          renderStatus(
-            result
-          );
-
-
-          if (
-            !result.ok
-          ) {
-
-            const failure =
-              result.failedPage;
-
-
-            throw new Error(
-              failure?.error ||
-              "A scan batch failed"
-            );
-          }
-
-
-          if (
-            result.complete
-          ) {
-
-            running =
-              false;
-
-            setActivity(
-              "Scan complete. All Audit and Pricing pages have been stored.",
-              "success"
-            );
-
-            break;
-          }
-
-
-          const batch =
-            result.batch;
-
-
-          const successfulPages =
-            batch.pages
-              .filter(
-                page =>
-                  page.ok
-              );
-
-
-          const lastPage =
-            successfulPages.length
-              ? successfulPages[
-                  successfulPages.length - 1
-                ].page
-              : null;
-
-
-          const next =
-            result.next;
-
-
-          if (
-            next
-          ) {
-
-            const finished =
-              lastPage !== null
-                ? `${batch.mode} page ${lastPage} complete. `
-                : "";
-
-
-            setActivity(
-              `${finished}Next: ${next.mode} page ${next.startPage}.`
-            );
-          }
-
-
-          /*
-           * Give the UI/event loop a moment before
-           * starting another Edge Function invocation.
-           */
-          await new Promise(
-            resolve =>
-              setTimeout(
-                resolve,
-                750
-              )
-          );
-        }
-
-
-        if (
-          pauseRequested
-        ) {
-
-          running =
-            false;
-
-
-          setActivity(
-            "Scan paused safely. Completed batches are already stored."
-          );
-        }
-
-      } catch (
-        error
-      ) {
-
-        running =
-          false;
-
-
-        setStatusPill(
-          "failed"
-        );
-
-
-        setActivity(
-          error.message,
-          "error"
-        );
-
-      } finally {
-
-        running =
-          false;
-
-
-        stopTimer();
-
-
-        continueButton.disabled =
-          latestStatus?.complete
-            ? true
-            : false;
-
-
-        pauseButton.disabled =
-          true;
-
-        refreshButton.disabled =
-          false;
-
-
-        if (
-          latestStatus &&
-          !latestStatus.complete &&
-          !activityText.classList.contains(
-            "error"
-          )
-        ) {
-          setStatusPill(
-            "paused"
-          );
-        }
-      }
-    }
-
-
-    /* =========================================================
-       PAUSE
-    ========================================================= */
-
-    function pauseScan() {
-
-      if (
-        !running
-      ) {
-        return;
-      }
-
-
-      pauseRequested =
-        true;
-
-
-      pauseButton.disabled =
-        true;
-
-
-      setActivity(
-        `<span class="spinner"></span>Pausing after the current batch…`
-      );
-    }
-
-
-    /* =========================================================
-       OPTIMISER
-    ========================================================= */
-
-    function openOptimiser() {
-
-      if (
-        !latestStatus?.complete
-      ) {
-        return;
-      }
-
-
-      /*
-       * We'll replace this with the actual optimiser
-       * results view in the next stage.
-       */
-
-      alert(
-        "Scan complete. Optimiser results view is ready to be connected."
-      );
-    }
-
-
-    /* =========================================================
-       EVENTS
-    ========================================================= */
-
-    continueButton.addEventListener(
-      "click",
-      runScan
-    );
-
-
-    pauseButton.addEventListener(
-      "click",
-      pauseScan
-    );
-
-
-    refreshButton.addEventListener(
-      "click",
-      async () => {
-
-        try {
-          await loadStatus();
-        } catch {
-          // Error already displayed.
-        }
-      }
-    );
-
-
-    optimiserButton.addEventListener(
-      "click",
-      openOptimiser
-    );
-
-
-    /* =========================================================
-       INITIALISE
-    ========================================================= */
-
-    async function initialise() {
-
-      if (
-        !configurationIsValid()
-      ) {
-
-        configWarning.classList.remove(
-          "hidden"
-        );
-
-        setStatusPill(
-          "failed"
-        );
-
-        setActivity(
-          "Add the Supabase configuration values, then reload this page.",
-          "error"
-        );
-
-        continueButton.disabled =
-          true;
-
-        refreshButton.disabled =
-          true;
-
-        return;
-      }
-
-
-      try {
-        await loadStatus();
-      } catch {
-        // Error is already shown in the activity box.
-      }
-    }
-
-
-    initialise();
-  </script>
-
+  <script type="module" src="js/app.js"></script>
 </body>
-
 </html>
