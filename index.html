@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Airlines Manager | Optimisers</title>
+  <style>
+    :root{color-scheme:dark;--bg:#0b0d10;--panel:#13161b;--border:#2a3039;--text:#f5f7fa;--muted:#929aa6;--accent:#ccff00}
+    *{box-sizing:border-box}
+    html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text);font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    header{padding:20px clamp(16px,3vw,38px) 0;background:#11151a;border-bottom:1px solid var(--border)}
+    .eyebrow{font-size:11px;font-weight:800;letter-spacing:.16em;color:var(--accent);margin:0 0 4px}
+    h1{font-size:clamp(23px,3vw,32px);margin:0 0 6px;letter-spacing:-.03em}
+    .subtitle{font-size:13px;color:var(--muted);margin:0 0 16px}
+    nav{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+    .tab{font:inherit;font-size:14px;font-weight:750;cursor:pointer;padding:13px 20px;border:1px solid transparent;border-bottom:3px solid transparent;background:transparent;color:var(--muted);border-radius:9px 9px 0 0}
+    .tab:hover{color:var(--text);background:#1b2027}
+    .tab[aria-selected="true"]{color:var(--accent);border-bottom-color:var(--accent);background:#1b2027}
+    .external{margin-left:auto;color:var(--muted);font-size:12px;text-decoration:none;padding:12px 0}
+    .external:hover{color:var(--accent)}
+    main{height:calc(100dvh - 161px);min-height:450px}
+    iframe{width:100%;height:100%;border:0;background:var(--bg);display:block}
+    iframe[hidden]{display:none}
+    @media(max-width:600px){header{padding-top:14px}.subtitle{margin-bottom:10px}.tab{padding:11px 12px;font-size:12px}.external{font-size:11px}main{height:calc(100dvh - 145px)}}
+  </style>
+</head>
+<body>
+<header>
+  <p class="eyebrow">AIRLINES MANAGER</p>
+  <h1>Optimisation tools</h1>
+  <p class="subtitle">Manage aircraft rotations and route pricing in one place.</p>
+  <nav role="tablist" aria-label="Optimiser tools">
+    <button id="tab-rotation" class="tab" role="tab" aria-selected="true" aria-controls="frame-rotation" type="button">Rotation Optimiser</button>
+    <button id="tab-price" class="tab" role="tab" aria-selected="false" aria-controls="frame-price" type="button">Price Optimiser</button>
+    <a id="open-page" class="external" href="rotation.html" target="_blank" rel="noopener">Open separately ↗</a>
+  </nav>
+</header>
+<main>
+  <iframe id="frame-rotation" title="Rotation Optimiser" src="rotation.html"></iframe>
+  <iframe id="frame-price" title="Price Optimiser" data-src="airlines_manager.html" hidden></iframe>
+</main>
+<script>
+  const views={rotation:{tab:document.getElementById('tab-rotation'),frame:document.getElementById('frame-rotation'),url:'rotation.html'},price:{tab:document.getElementById('tab-price'),frame:document.getElementById('frame-price'),url:'airlines_manager.html'}};
+  function show(which){
+    if(!views[which])which='rotation';
+    for(const [key,view] of Object.entries(views)){
+      const active=key===which;
+      view.tab.setAttribute('aria-selected',String(active));
+      view.frame.hidden=!active;
+      if(active && !view.frame.src && view.frame.dataset.src) view.frame.src=view.frame.dataset.src;
+    }
+    document.getElementById('open-page').href=views[which].url;
+    history.replaceState(null,'','#'+which);
+  }
+  for(const [key,view] of Object.entries(views))view.tab.addEventListener('click',()=>show(key));
+  window.addEventListener('hashchange',()=>show(location.hash.slice(1)));
+  show(location.hash.slice(1));
+</script>
+</body>
+</html>
