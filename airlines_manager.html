@@ -1174,6 +1174,7 @@
       params
     ) {
 
+      const sharedToken = await window.parent.amSharedAuth.token();
       const response =
         await fetch(
           functionUrl(
@@ -1187,7 +1188,7 @@
                 SUPABASE_PUBLISHABLE_KEY,
 
               "Authorization":
-                `Bearer ${SUPABASE_PUBLISHABLE_KEY}`,
+                `Bearer ${sharedToken}`,
             },
           }
         );
@@ -4480,6 +4481,7 @@ hubFilter.addEventListener(
 
 
       try {
+        await window.parent.amSharedAuth.token();
         const latestScan = await loadLatestCompletedScan();
         if (latestScan) {
           await loadStatus();

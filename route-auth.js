@@ -43,6 +43,7 @@ async function login(){
  finally{status();}
 }
 async function token(){
+ if(window.parent!==window && window.parent.amSharedAuth)return window.parent.amSharedAuth.token();
  if(!session)throw Error('Sign in to Supabase Auth before using scanner controls.');
  if(Date.now()<session.expires_at)return session.access_token;
  if(!refreshInFlight)refreshInFlight=authCall('token?grant_type=refresh_token',{refresh_token:session.refresh_token})
@@ -59,7 +60,7 @@ $('auth-logout').addEventListener('click',()=>{
  window.dispatchEvent(new CustomEvent('route-importer-auth-changed',{detail:{signedIn:false}}));
  // No persistent session; token is not retained after logout.
 });
-window.routeImporterAuth={token, isSignedIn:()=>Boolean(session?.access_token)};
+window.routeImporterAuth={token, isSignedIn:()=>Boolean(session?.access_token)||(window.parent!==window && Boolean(window.parent.amSharedAuth?.isSignedIn()))};
 window.dispatchEvent(new CustomEvent('route-importer-auth-changed',{detail:{signedIn:Boolean(session?.access_token)}}));
 status();
 })();

@@ -1,9 +1,9 @@
-AM affiliation frontend patch v2
+Shared sign-in v5 — staged website integration
 
-Deploy these seven files together in the existing Route Importer directory. Existing production tables are not modified.
+Deploy index.html, am-shared-auth.js, airlines_manager.html, rotation.html, js/app.js, route-importer.html, js/route-auth.js and the remaining Route Importer JS files at the paths your existing site uses.
 
-IMPORTANT: The scanner Edge Function already blocks affiliated origins; this adds a user-interface restriction and checks before scanner start, resume, results and CSV merge. The server remains authoritative.
+IMPORTANT: This implementation assumes all iframe pages share the same origin. It reuses the existing Supabase project. Auth is persisted in same-origin localStorage to support page refresh, unlike the previous in-memory-only sessions. Do not deploy on a public/shared browser if persistent sign-in is unwanted.
 
-The Rotation Optimiser uses js/app.js, which was not supplied. Its HTML alone cannot safely implement the guard. The Price Optimiser uses its own anonymous-key API and requires an authenticated affiliation data path before an authoritative guard can be added. Neither optimiser is modified in this ZIP.
+Do not remove server-side authentication/affiliation checks. Price Optimiser Edge Function still needs its own server-side affiliated-origin enforcement.
 
-Test: sign in; verify BKK disabled; verify CGK enabled; verify BKK scan rejected by backend; confirm existing records unchanged. If affiliation lookup fails, mutating importer controls remain disabled.
+The rotation file is based on the latest previously supplied v3 patch; inspect differences against current deployment before replacing. Test on a staging branch first.
