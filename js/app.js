@@ -13,7 +13,8 @@
 import {
   csv,
   prepare,
-  getSupportedAircraft
+  getSupportedAircraft,
+  setAffiliatedDestinations
 } from "./engine.js";
 
 let HUB = "BOM";
@@ -339,6 +340,20 @@ async function readProductionHub(hub) {
   return result;
 }
 
+async function loadAffiliatedHubs() {
+  if (!accessToken || !scannerEndpoint) throw new Error("Sign in to load affiliated hubs");
+  const url = new URL(scannerEndpoint);
+  url.searchParams.set("action", "affiliated-hubs");
+  const response = await fetch(url, {cache:"no-store",headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${accessToken}`}});
+  const body = await response.json();
+  if (!response.ok || body.ok === false || !Array.isArray(body.hubs))
+    throw new Error(body.error || "Affiliated hub register unavailable");
+  const codes = body.hubs.filter(x=>x.is_affiliated===true).map(x=>String(x.hub).toUpperCase());
+  if (!codes.length) throw new Error("No affiliated hubs returned — check the register before optimising");
+  setAffiliatedDestinations(codes);
+  return codes;
+}
+
 async function loadSupabaseData() {
   const hubs = ["BOM","CGK","MPM","BKK","DEL"];
   const batches = await Promise.all(hubs.map(readProductionHub));
@@ -403,7 +418,7 @@ async function loadData() {
   clearResults(); updateButtons();
   setStatus("Loading production routes and pricing from Supabase…");
   try {
-    const [dataset] = await Promise.all([loadSupabaseData(),refreshFleet()]);
+    const [dataset, , affiliatedHubs] = await Promise.all([loadSupabaseData(),refreshFleet(),loadAffiliatedHubs()]);
     validateSupabaseData(dataset);
     if (generation !== loadGeneration) return;
     rawRoutes = dataset.routes; rawPricing = dataset.pricing; rawAircraft = dataset.aircraft;
@@ -413,7 +428,7 @@ async function loadData() {
     HUB = availableHubs.includes(HUB) ? HUB : availableHubs[0];
     activateHub(HUB);
     const status = $("status")?.textContent || "";
-    setStatus(`Production Supabase data loaded. ${status}`);
+    setStatus(`Production Supabase data loaded. Affiliated destinations excluded: ${affiliatedHubs.join(", ")}. ${status}`);
   } catch (error) {
     console.error("[Rotation Optimiser] Supabase load failed",error);
     preparedData = null; updateButtons();

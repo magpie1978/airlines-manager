@@ -23,9 +23,11 @@
  * This is a greedy fleet optimiser, not a global optimum.
  */
 
-export const EXCLUDED = new Set([
-  "BKK", "CGK", "DEL"
-]);
+export const EXCLUDED = new Set();
+export function setAffiliatedDestinations(codes) {
+  EXCLUDED.clear();
+  for (const code of codes) EXCLUDED.add(String(code).trim().toUpperCase());
+}
 
 /**
  * Coin-restricted aircraft IDs (27 models), verified against the game's
