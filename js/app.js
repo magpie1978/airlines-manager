@@ -23,46 +23,83 @@ let rawAircraft = [];
 let availableHubs = [];
 let loadGeneration = 0;
 let activeDataSource = "CSV";
-// In-memory reservation only; a page refresh clears it.
-let confirmedX380Hub = null;
+// Fleet allocations are authoritative in Supabase, not browser memory.
+let fleetState = null;
 let resultHub = null;
-
+let resultFleetVersion = null;
 function x380GroupsInResult() {
   return optimisationResult?.rotations?.filter(r => r.model === "X380Plus").length ?? 0;
 }
-
+function fleetVersion(f) {
+  return JSON.stringify([f.owned_count,f.group_size,f.allocations]);
+}
+function allocatedHere() {
+  return Number(fleetState?.allocations?.[HUB] || 0);
+}
+function freeGroups() {
+  if (!fleetState) return 0;
+  const used = Object.values(fleetState.allocations).reduce((sum,n)=>sum+Number(n),0);
+  return Math.max(0,Math.floor((fleetState.owned_count-used)/fleetState.group_size));
+}
 function updateX380Controls() {
   const status = $("x380-status");
-  if (status) status.textContent = confirmedX380Hub
-    ? `7 of 10 X380Plus aircraft reserved for ${confirmedX380Hub}. The other 3 cannot form a group.`
-    : "10 X380Plus aircraft available globally (one seven-aircraft group). No confirmed reservation.";
+  if (status) {
+    if (!fleetState) status.textContent = "Fleet register unavailable — optimisation blocked.";
+    else {
+      const used = Object.values(fleetState.allocations).reduce((sum,n)=>sum+Number(n),0);
+      const allocations = Object.entries(fleetState.allocations).filter(([,n])=>n>0).map(([hub,n])=>`${hub}: ${n}`).join(" · ");
+      status.textContent = `${fleetState.owned_count} owned · ${used} allocated (${allocations||"none"}) · ${fleetState.owned_count-used} free · ${freeGroups()} new seven-aircraft groups available. Existing allocations are not automatically reused.`;
+    }
+  }
   const confirm = $("confirm-x380");
-  if (confirm) confirm.disabled = isRunning || !optimisationResult || resultHub !== HUB ||
-    x380GroupsInResult() !== 1 || (confirmedX380Hub !== null && confirmedX380Hub !== HUB);
+  if (confirm) confirm.disabled = isRunning || !fleetState || !optimisationResult || resultHub !== HUB ||
+    x380GroupsInResult() < 1 || resultFleetVersion !== fleetVersion(fleetState);
   const release = $("release-x380");
-  if (release) release.disabled = isRunning || confirmedX380Hub === null;
+  if (release) release.disabled = isRunning || !fleetState || allocatedHere() === 0;
 }
-
-function confirmX380() {
-  if (isRunning || !optimisationResult || resultHub !== HUB || x380GroupsInResult() !== 1) return;
-  if (confirmedX380Hub && confirmedX380Hub !== HUB) return;
-  confirmedX380Hub = HUB;
+async function fleetRequest(action, params={}) {
+  if (!accessToken || !scannerEndpoint) throw new Error("Sign in to access the fleet register");
+  const url = new URL(scannerEndpoint);
+  url.searchParams.set("action",action);
+  for (const [k,v] of Object.entries(params)) url.searchParams.set(k,String(v));
+  const response = await fetch(url,{method: action === "fleet-reserve" ? "POST":"GET",cache:"no-store",
+    headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${accessToken}`}});
+  const body = await response.json();
+  if (!response.ok || body.ok === false) throw new Error(body.error || `HTTP ${response.status}`);
+  return body;
+}
+async function refreshFleet() {
+  const body = await fleetRequest("fleet-status");
+  const f=body.fleet;
+  if (!f || !Number.isSafeInteger(f.owned_count) || !Number.isSafeInteger(f.group_size) || f.group_size!==7 || !f.allocations)
+    throw new Error("Invalid X380Plus fleet register response");
+  fleetState=f;
   updateX380Controls();
-  setStatus(`Confirmed: one X380Plus group reserved for ${HUB} this session.`);
+  return f;
 }
-
-function releaseX380() {
-  if (isRunning || !confirmedX380Hub) return;
-  const previous = confirmedX380Hub;
-  confirmedX380Hub = null;
-  // Old proposed rotations must be rerun before they can be confirmed.
-  optimisationResult = null;
-  resultHub = null;
-  clearResults();
-  updateButtons();
-  setStatus(`Released ${previous}'s X380Plus reservation. Run the optimiser again to create a new proposal.`);
+async function confirmX380() {
+  if (isRunning || !optimisationResult || resultHub !== HUB || !x380GroupsInResult()) return;
+  try {
+    const latest=await refreshFleet();
+    if (fleetVersion(latest)!==resultFleetVersion) throw new Error("Fleet allocation changed; rerun optimisation before confirming");
+    const groups=x380GroupsInResult();
+    if (groups>freeGroups()) throw new Error("Not enough unallocated aircraft for this proposal");
+    await fleetRequest("fleet-reserve",{hub:HUB,groups});
+    await refreshFleet();
+    optimisationResult=null; resultHub=null; resultFleetVersion=null; clearResults();updateButtons();
+    setStatus(`${groups*7} X380Plus aircraft allocated to ${HUB} in Supabase. Run optimisation again for further proposals.`);
+  } catch(e) {setStatus(`Fleet reservation rejected: ${e.message}`);}
 }
-
+async function releaseX380() {
+  if (isRunning || !fleetState || !allocatedHere()) return;
+  if (!window.confirm(`Release ${allocatedHere()} X380Plus aircraft allocated to ${HUB}? Only do this if the game allocation has actually been removed.`)) return;
+  try {
+    await fleetRequest("fleet-reserve",{hub:HUB,groups:0});
+    await refreshFleet();
+    optimisationResult=null;resultHub=null;resultFleetVersion=null;clearResults();updateButtons();
+    setStatus(`Released ${HUB} X380Plus allocation in Supabase.`);
+  } catch(e) {setStatus(`Release failed: ${e.message}`);}
+}
 
 function normaliseHub(value) {
   return String(value ?? "").trim().toUpperCase();
@@ -101,6 +138,7 @@ function activateHub(hub) {
   updateHubHeading();
   optimisationResult = null;
   resultHub = null;
+  resultFleetVersion = null;
   preparedData = null;
   clearResults();
   const routes = rawRoutes.filter(row => normaliseHub(row.hub) === HUB);
@@ -222,7 +260,7 @@ function updateButtons() {
 
   if (runButton) {
     runButton.disabled =
-      isRunning || preparedData === null;
+      isRunning || preparedData === null || fleetState === null;
   }
 
   if (stopButton) {
@@ -235,6 +273,7 @@ function updateButtons() {
     downloadButton.disabled =
       isRunning ||
       !optimisationResult ||
+      resultFleetVersion !== fleetVersion(fleetState) ||
       optimisationResult.rotations.length === 0;
   }
 }
@@ -358,12 +397,13 @@ function renderConfigurations(fleet) {
 }
 
 async function loadData() {
+  fleetState = null;
   const generation = ++loadGeneration;
   preparedData = null; optimisationResult = null;
   clearResults(); updateButtons();
   setStatus("Loading production routes and pricing from Supabase…");
   try {
-    const dataset = await loadSupabaseData();
+    const [dataset] = await Promise.all([loadSupabaseData(),refreshFleet()]);
     validateSupabaseData(dataset);
     if (generation !== loadGeneration) return;
     rawRoutes = dataset.routes; rawPricing = dataset.pricing; rawAircraft = dataset.aircraft;
@@ -510,8 +550,8 @@ function renderDemandSummary() {
 // RUN OPTIMISER
 // ============================================================
 
-function runOptimiser() {
-  if (isRunning || !preparedData) {
+async function runOptimiser() {
+  if (isRunning || !preparedData || !fleetState) {
     return;
   }
 
@@ -536,8 +576,13 @@ function runOptimiser() {
     return;
   }
 
+  // Fail closed if the fleet register is unreachable or has changed.
+  try { await refreshFleet(); }
+  catch(error) { fleetState=null;updateButtons();setStatus(`Cannot optimise without fleet status: ${error.message}`);return; }
+  if (isRunning || !preparedData) return;
   optimisationResult = null;
   resultHub = null;
+  resultFleetVersion = null;
   clearResults();
 
   if (worker) {
@@ -613,8 +658,15 @@ function runOptimiser() {
       }
 
       if (type === "result") {
+        const proposedX380=(payload.rotations||[]).filter(r=>r.model==="X380Plus").length;
+        if (proposedX380>freeGroups()) {
+          isRunning=false;activeWorker.terminate();worker=null;
+          optimisationResult=null;clearResults();updateButtons();
+          setStatus("Invalid engine output: X380Plus exceeds unallocated fleet. Result discarded.");return;
+        }
         optimisationResult = payload;
         resultHub = HUB;
+        resultFleetVersion = fleetVersion(fleetState);
 
         isRunning = false;
 
@@ -677,7 +729,7 @@ function runOptimiser() {
       data: preparedData,
       settings: {
         groups,
-        x380PlusAvailableGroups: confirmedX380Hub && confirmedX380Hub !== HUB ? 0 : 1
+        x380PlusAvailableGroups: freeGroups()
       }
     });
 
@@ -728,7 +780,9 @@ function stopOptimiser() {
   // EXPORT CIRCUITS FOR TESTING
   // ============================================================
 
-  function downloadRotations() {
+  async function downloadRotations() {
+    try { await refreshFleet(); } catch(e) { setStatus(`Cannot export without checking fleet: ${e.message}`); return; }
+    if (resultFleetVersion !== fleetVersion(fleetState)) {setStatus("Fleet allocation changed; rerun optimisation before export.");return;}
     if (!optimisationResult?.rotations?.length) {
       return;
     }
@@ -795,7 +849,7 @@ async function initialise() {
   updateButtons();
   $("db-sign-in")?.addEventListener("click",signInForOptimiser);
   $("db-sign-out")?.addEventListener("click",()=>{
-    accessToken=null; scannerEndpoint=""; rawRoutes=[]; rawPricing=[]; preparedData=null;
+    accessToken=null; scannerEndpoint=""; fleetState=null; rawRoutes=[]; rawPricing=[]; preparedData=null;
     availableHubs=[]; optimisationResult=null; clearResults(); renderHubOptions(); updateButtons();
     $("db-auth-status").textContent="Not signed in";
     setStatus("Signed out. Sign in to reload production data.");
