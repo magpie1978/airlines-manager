@@ -1,11 +1,9 @@
-AM Route Importer v0.2
+AM affiliation frontend patch v2
 
-Deploy index.html, route-importer.html, route-importer.js and route-scanner.js in the same website folder.
+Deploy these seven files together in the existing Route Importer directory. Existing production tables are not modified.
 
-The existing Supabase Edge Function API supports POST ?action=start, batch, status, results. It scans ALL hubs. v0.2 cannot limit scanning to CGK; hub selection filters results for export only.
+IMPORTANT: The scanner Edge Function already blocks affiliated origins; this adds a user-interface restriction and checks before scanner start, resume, results and CSV merge. The server remains authoritative.
 
-Provide the actual Edge Function URL and a publishable/anon key at runtime. Never enter a service-role key. Ensure the Edge Function enforces proper authentication/authorization server-side before use.
+The Rotation Optimiser uses js/app.js, which was not supplied. Its HTML alone cannot safely implement the guard. The Price Optimiser uses its own anonymous-key API and requires an authenticated affiliation data path before an authoritative guard can be added. Neither optimiser is modified in this ZIP.
 
-Start/Resume/Pause are browser controls. Pausing does not cancel an in-flight server-side operation. Supabase writes are performed by the existing Edge Function.
-
-Exported scanned CSV is intentionally partial. Merge with the 19-column routes.csv using the existing importer and validate missing categories and pricing before using it in the optimiser.
+Test: sign in; verify BKK disabled; verify CGK enabled; verify BKK scan rejected by backend; confirm existing records unchanged. If affiliation lookup fails, mutating importer controls remain disabled.

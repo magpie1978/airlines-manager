@@ -25,7 +25,7 @@ async function refresh(){
    $('pub-unresolved').textContent=n(r.unresolvedCategories);
    $('pub-eligible').textContent=`${n(r.validEligiblePricing)} / ${n(r.eligibleDestinations)}`;
    $('pub-errors').textContent=n(r.pricingErrors);
-   $('pub-readiness').textContent=r.ready?`${hub}: ready for optimisation (subject to aircraft and engine checks).`:`${hub}: needs attention — ${n(r.unresolvedCategories)} unresolved categories; ${n(r.missingEligiblePricing)} eligible routes without valid pricing.`;
+   $('pub-readiness').textContent=window.amOriginGuard?.isBlocked()&&r.affiliatedOrigin===true?`${hub}: affiliated origin — scanning, publication and optimisation disabled.`:r.ready?`${hub}: ready for optimisation (subject to aircraft and engine checks).`:`${hub}: needs attention — ${n(r.unresolvedCategories)} unresolved categories; ${n(r.missingEligiblePricing)} eligible routes without valid pricing.`;
    $('pub-note').textContent=`${n(r.affiliatedDestinations)} affiliated destinations excluded. Database snapshot; newly recovered categories and per-scan changes are not historically tracked.`;
  }catch(e){$('pub-readiness').textContent='Publication report failed: '+e.message;}
  finally{busy=false;button.disabled=false;}
