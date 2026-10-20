@@ -1464,7 +1464,8 @@
       const scanCodes = (Array.isArray(scanHubs) ? scanHubs : [scanHubs])
         .map(h => String(typeof h === 'object' && h !== null ? (h.hub_code || h.hubCode || h.hub || '') : (h || '')).toUpperCase())
         .filter(Boolean);
-      const blockedScan = scanCodes.some(code => affiliatedOrigins.has(code));
+      const blockedScan = !affiliationVerified || scanCodes.length === 0 || scanCodes.some(code => affiliatedOrigins.has(code));
+      optimiserButton.dataset.affiliationBlocked = blockedScan ? "true" : "false";
 
       const audit =
         result.progress.audit;
@@ -1542,7 +1543,7 @@
 
 
       optimiserButton.disabled =
-        !result.complete;
+        !result.complete || blockedScan;
 
 
       if (
@@ -1555,9 +1556,13 @@
         pauseButton.disabled =
           true;
 
-        setStatusPill(
-          "complete"
-        );
+        if (blockedScan) {
+          statusPill.className = "status-pill failed";
+          statusText.textContent = scanCodes.some(code => affiliatedOrigins.has(code))
+            ? "Affiliated hub — blocked" : "Hub eligibility unverified";
+        } else {
+          setStatusPill("complete");
+        }
 
       } else {
 
@@ -1623,6 +1628,7 @@
           });
 
 
+        await refreshAffiliatedOrigins();
         renderStatus(
           result
         );
@@ -1632,10 +1638,11 @@
           result.complete
         ) {
 
-          setActivity(
-            "Scan complete. The optimiser data is ready.",
-            "success"
-          );
+          if (optimiserButton.dataset.affiliationBlocked === "true") {
+            setActivity("Scan history is complete, but this hub is affiliated or its eligibility cannot be verified. Optimisation is disabled.", "error");
+          } else {
+            setActivity("Scan complete. The optimiser data is ready.", "success");
+          }
 
         } else {
 
@@ -1949,10 +1956,7 @@
     ========================================================= */
 
     function openOptimiser() {
-      if (!latestStatus?.complete) {
-        return;
-      }
-
+      if (!latestStatus?.complete || optimiserButton.dataset.affiliationBlocked === "true") return;
       loadOptimiser();
     }
 
@@ -4267,6 +4271,10 @@ checkbox.addEventListener(
       optimiserButton.textContent = "Loading…";
 
       try {
+        await refreshAffiliatedOrigins();
+        const scanHubs = latestStatus?.scan?.hubs || latestStatus?.hubs || latestStatus?.scan?.hub_code || latestStatus?.scan?.hubCode || latestStatus?.scan?.hub;
+        const scanCodes = (Array.isArray(scanHubs) ? scanHubs : [scanHubs]).map(h => String(typeof h === "object" && h !== null ? (h.hub_code || h.hubCode || h.hub || "") : (h || "")).trim().toUpperCase()).filter(Boolean);
+        if (!scanCodes.length || scanCodes.some(code => affiliatedOrigins.has(code))) throw new Error("Affiliated hub or unverified scan origin: optimisation blocked.");
         const result = await callFunction({
           action: "results",
           scanId: currentScanId
