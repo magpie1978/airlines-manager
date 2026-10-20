@@ -128,6 +128,17 @@ html body textarea::placeholder {
 #manual-csv-tools .warn { margin-top:14px; }
 .technical-notes { margin-top:14px; border-top:1px solid #303741; padding-top:8px; }
 #manual-csv-tools > details > summary { font-size:17px; }
+
+/* Collapsible scan diagnostics: normal progress stays out of the way. */
+.scan-activity{margin-top:16px;border:1px solid #2c3642;border-radius:11px;background:#0d1219;overflow:hidden}
+.scan-activity>summary{cursor:pointer;padding:13px 16px;font-weight:700;color:#eaf0f5;display:flex;gap:14px;align-items:center;justify-content:space-between}
+.scan-activity>summary::marker{color:#ccff00}
+#scan-activity-indicator{font-size:12px;font-weight:500;color:#aab5c2;text-align:right}
+.scan-activity>pre{margin:0;border:0;border-top:1px solid #29333e;border-radius:0;max-height:260px}
+#affiliations-panel .affiliations-details > summary { cursor:pointer; font-size:19px; font-weight:750; color:#f5f7fa; padding:5px 0; }
+#affiliations-panel .affiliations-details > summary:focus-visible { outline:2px solid #ccff00; outline-offset:4px; }
+#affiliations-panel .aff-summary-hint { color:#9ca5b2; font-size:12px; font-weight:500; margin-left:10px; }
+#affiliations-panel .affiliations-details[open] > summary { margin-bottom:20px; }
 </style>
 </head>
 <body>
@@ -257,7 +268,7 @@ html body textarea::placeholder {
       —
      </strong>
 </div>
-</div><pre id="scan-log">Use the main Airlines Manager header to sign in, then select a hub.</pre></section><section class="panel" id="manual-csv-tools"><details class="advanced-tools"><summary>Manual CSV import (advanced — optional)</summary><p>Only use this if you need to merge a game-side owned-routes export with an existing routes.csv. The automated Supabase scan does not require these files.</p><div class="grid"><div>
+</div><details id="scan-activity" class="scan-activity"><summary>Scan activity <span id="scan-activity-indicator">No scan activity yet</span></summary><pre id="scan-log" role="log" aria-live="polite">No scan activity yet.</pre></details></section><section class="panel" id="manual-csv-tools"><details class="advanced-tools"><summary>Manual CSV import (advanced — optional)</summary><p>Only use this if you need to merge a game-side owned-routes export with an existing routes.csv. The automated Supabase scan does not require these files.</p><div class="grid"><div>
 <label for="base">
       Existing routes.csv (preserved)
      </label>
@@ -386,9 +397,9 @@ html body textarea::placeholder {
    </button>
 </section>
 <section class="panel" id="affiliations-panel">
-<h2>
-    Affiliated Hub Manager
-   </h2>
+<details class="affiliations-details">
+<summary>Affiliated Hub Manager <span class="aff-summary-hint">(expand to manage hubs)</span></summary>
+
 <p>
     Manage affiliated hubs in Supabase. Affiliated hubs are blocked as origins for scanning, importing and optimisation, and are excluded as destinations. Changes never delete routes, pricing or X380Plus allocations.
    </p>
@@ -440,6 +451,7 @@ html body textarea::placeholder {
 <p class="warn">
     Removing affiliation changes origin restrictions and destination exclusions. It does not release aircraft or delete data. Refresh the Rotation Optimiser after changes.
    </p>
+</details>
 </section>
 <script src="affiliated-hubs.js">
 </script>
@@ -494,6 +506,31 @@ html body textarea::placeholder {
  window.addEventListener('pageshow',()=>loadLatest());
  // The main page owns login state; a new scan keeps its own ID until hub changes.
  loadLatest();
+})();
+</script>
+<script>
+/* Keep existing scan-log ID and scanner behaviour unchanged. */
+(()=>{'use strict';
+  const details=document.getElementById('scan-activity');
+  const log=document.getElementById('scan-log');
+  const indicator=document.getElementById('scan-activity-indicator');
+  if(!details||!log||!indicator)return;
+  const initial='Use the main Airlines Manager header to sign in, then select a hub.';
+  function update(){
+    let message=(log.textContent||'').trim();
+    if(!message||message===initial){
+      if(message!== 'No scan activity yet.')log.textContent='No scan activity yet.';
+      indicator.textContent='No scan activity yet';
+      return;
+    }
+    const problem=/(?:error|failed|blocked|denied|invalid|exception)/i.test(message);
+    const active=/^Batch\s+\d+:/i.test(message);
+    const done=/(?:Scan complete|Loaded \d+|Paused\.)/i.test(message);
+    indicator.textContent=problem?'Attention required':active?'Scanning…':done?'Latest activity available':'Activity available';
+    if(problem||active)details.open=true;
+  }
+  new MutationObserver(update).observe(log,{childList:true,characterData:true,subtree:true});
+  update();
 })();
 </script>
 </body>
