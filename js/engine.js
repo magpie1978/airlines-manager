@@ -24,7 +24,7 @@
  */
 
 export const EXCLUDED = new Set([
-  "BKK", "CGK", "DEL"
+  "BKK", "DEL"
 ]);
 
 /**
