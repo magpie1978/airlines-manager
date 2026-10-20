@@ -98,6 +98,20 @@ body{max-width:1320px;padding:26px 30px 65px;line-height:1.5}h1{font-size:29px;l
 input, select, textarea { color: #ffffff !important; -webkit-text-fill-color: #ffffff !important; }
 input::placeholder, textarea::placeholder { color: #e5eaf0 !important; opacity: 1 !important; -webkit-text-fill-color: #e5eaf0 !important; }
 input[type="file"]::file-selector-button { color: #ffffff !important; }
+
+/* Explicitly override legacy lime-control WebKit text fill for form inputs. */
+html body input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+html body select,
+html body textarea {
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+}
+html body input::placeholder,
+html body textarea::placeholder {
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+  opacity: 1 !important;
+}
 </style>
  </head>
  <body>
