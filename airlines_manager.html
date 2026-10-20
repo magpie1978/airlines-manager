@@ -2194,14 +2194,14 @@ function selectAllAvailableRoutes() {
 
       const next = new Set();
       for (const row of records) {
-        if (!row || typeof row !== "object" || !("hub_code" in row || "hubCode" in row)) {
+        if (!row || typeof row !== "object" || !("hub" in row || "hub_code" in row || "hubCode" in row)) {
           throw new Error("Affiliation register contains an invalid hub entry. Pricing remains blocked.");
         }
-        const code = String(row.hub_code ?? row.hubCode ?? "").trim().toUpperCase();
+        const code = String(row.hub ?? row.hub_code ?? row.hubCode ?? "").trim().toUpperCase();
         if (!/^[A-Z0-9]{3,5}$/.test(code)) {
           throw new Error("Affiliation register contains an invalid hub code. Pricing remains blocked.");
         }
-        const enabled = row.is_active ?? row.active ?? row.enabled ?? true;
+        const enabled = row.is_affiliated ?? row.is_active ?? row.active ?? row.enabled ?? true;
         if (enabled === true || enabled === 1 || enabled === "true") next.add(code);
       }
 
