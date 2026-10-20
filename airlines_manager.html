@@ -972,6 +972,8 @@
      * A Full Refresh replaces this with the newly-created scan.
      */
     let currentScanId = null;
+    const PRICE_TEST_HUB = "CGK"; // Explicit test hub; never fall back to another hub.
+    let selectedScanVerified = false;
 
 
     /*
@@ -1274,6 +1276,7 @@
 
     function setCurrentScanId(scanId) {
       currentScanId = scanId || null;
+      selectedScanVerified = false;
       scanIdText.textContent = currentScanId
         ? `Scan ${currentScanId}`
         : "No completed scan found";
@@ -1585,8 +1588,8 @@
 
     async function loadStatus() {
 
-      if (!currentScanId) {
-        throw new Error("No active scan is selected.");
+      if (!currentScanId || !selectedScanVerified) {
+        throw new Error("No verified CGK scan is selected.");
       }
 
       if (
@@ -1704,12 +1707,11 @@
 
     async function runScan() {
 
-      if (
-        running
-      ) {
+      if (running) return;
+      if (!currentScanId || !selectedScanVerified) {
+        setActivity("Select a verified CGK scan before continuing.", "error");
         return;
       }
-
 
       running = true;
       pauseRequested = false;
@@ -1956,7 +1958,7 @@
     ========================================================= */
 
     function openOptimiser() {
-      if (!latestStatus?.complete || optimiserButton.dataset.affiliationBlocked === "true") return;
+      if (!selectedScanVerified || !latestStatus?.complete || optimiserButton.dataset.affiliationBlocked === "true") return;
       loadOptimiser();
     }
 
@@ -4383,7 +4385,7 @@ hubFilter.addEventListener(
 
 
     async function loadLatestCompletedScan() {
-      const result = await callFunction({ action: "latest" });
+      const result = await callFunction({ action: "latest", hub: PRICE_TEST_HUB });
 
       if (!result.hasCompletedScan || !result.scan?.id) {
         setCurrentScanId(null);
@@ -4393,7 +4395,21 @@ hubFilter.addEventListener(
         return null;
       }
 
+      // The Edge Function must honour the hub filter and identify the scan's hub.
+      // Do not silently select the latest scan belonging to another hub.
+      const rawHubs = result.scan.hubs ?? result.scan.hub_code ?? result.scan.hubCode ?? result.scan.hub;
+      const codes = (Array.isArray(rawHubs) ? rawHubs : [rawHubs])
+        .map(h => String(typeof h === "object" && h !== null
+          ? (h.hub_code ?? h.hubCode ?? h.hub ?? "") : (h ?? "")).trim().toUpperCase())
+        .filter(Boolean);
+      if (codes.length !== 1 || codes[0] !== PRICE_TEST_HUB) {
+        setCurrentScanId(null);
+        optimiserButton.disabled = true;
+        continueButton.disabled = true;
+        throw new Error(`Expected a verified ${PRICE_TEST_HUB} scan, but the server returned ${codes.join(", ") || "no hub identity"}. The Edge Function's latest action must support hub filtering. No pricing actions were started.`);
+      }
       setCurrentScanId(result.scan.id);
+      selectedScanVerified = true;
       lastFullRefresh.textContent =
         `Last full refresh: ${formatDateTime(result.scan.completedAt)}`;
       return result.scan;
@@ -4402,6 +4418,9 @@ hubFilter.addEventListener(
 
     async function startFullRefresh() {
       if (running) return;
+      // Starting a new scan is disabled until the backend accepts an explicit hub.
+      setActivity("CGK full refresh requires a hub-scoped start action in the Edge Function. No scan has been started.", "error");
+      return;
 
       const confirmed = window.confirm(
         "Start a full refresh of all Audit and Pricing pages? Existing scans will be kept as history."
@@ -4518,8 +4537,9 @@ hubFilter.addEventListener(
         if (latestScan) {
           await loadStatus();
         }
-      } catch {
-        // Error is already shown in the activity box.
+      } catch (error) {
+        setStatusPill("failed");
+        setActivity(error.message, "error");
       }
     }
 
