@@ -1,9 +1,50 @@
-/* Affiliated origin guard. Reads the authenticated scanner endpoint, fails closed for mutating actions. */
-(()=>{'use strict';const $=id=>document.getElementById(id);let affiliated=new Set(),ready=false,loading=null;
-const norm=s=>String(s||'').trim().toUpperCase();
-async function refresh(){if(loading)return loading;ready=false;sync();loading=(async()=>{const endpoint=$('endpoint')?.value.trim(),key=$('api-key')?.value.trim();if(!endpoint||!key||!window.routeImporterAuth?.isSignedIn?.())throw Error('Sign in to load affiliation restrictions.');const url=new URL(endpoint);url.searchParams.set('action','affiliated-hubs');const token=await window.routeImporterAuth.token();const response=await fetch(url,{headers:{apikey:key,Authorization:'Bearer '+token},cache:'no-store'});const data=await response.json();if(!response.ok||data.ok===false||!Array.isArray(data.hubs))throw Error(data.error||'Could not verify affiliations.');affiliated=new Set(data.hubs.filter(h=>h.is_affiliated).map(h=>norm(h.hub)));ready=true;sync();return true})().finally(()=>{loading=null;sync()});return loading;}
-function sync(){const select=$('hub');if(!select)return;for(const option of select.options){const code=norm(option.value||option.textContent);option.disabled=ready&&affiliated.has(code);option.title=option.disabled?'Affiliated origin — disabled':'';}const hub=norm(select.value),blocked=!ready||affiliated.has(hub);for(const id of ['scan-start','validate']){const button=$(id);if(button)button.disabled=blocked;}const message=$('aff-origin-status');if(message)message.textContent=!ready?'Origin-hub affiliation check required. Sign in and refresh affiliations.':affiliated.has(hub)?`${hub} is affiliated. Scanning and CSV importing are disabled.`:`${hub} is eligible as an origin hub.`;}
-async function assertAllowed(){await refresh();const hub=norm($('hub')?.value);if(!ready||affiliated.has(hub))throw Error(`${hub} is an affiliated hub or affiliation status could not be verified. Operation blocked.`);return hub;}
-function init(){const select=$('hub');const note=document.createElement('p');note.id='aff-origin-status';note.className='warn';note.setAttribute('role','status');select.parentElement.append(note);select.addEventListener('change',sync);window.addEventListener('route-importer-auth-changed',()=>{ready=false;affiliated.clear();sync();if(window.routeImporterAuth?.isSignedIn?.())refresh().catch(e=>{note.textContent=e.message;});});$('aff-refresh')?.addEventListener('click',()=>refresh().catch(e=>{note.textContent=e.message;}));$('endpoint')?.addEventListener('change',()=>{ready=false;sync()});$('api-key')?.addEventListener('change',()=>{ready=false;sync()});sync();}
-window.amOriginGuard={refresh,assertAllowed,isBlocked:()=>!ready||affiliated.has(norm($('hub')?.value))};if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
+/* Affiliated-origin eligibility. Verified server register; fail closed. */
+(()=>{'use strict';
+const $=id=>document.getElementById(id), norm=v=>String(v??'').trim().toUpperCase();
+let affiliated=new Set(), ready=false, pending=null, generation=0;
+const eligible=hub=>ready && /^[A-Z0-9]{3,5}$/.test(norm(hub)) && !affiliated.has(norm(hub));
+function sync(){
+ const select=$('hub');if(!select)return;
+ for(const option of select.options){const code=norm(option.value||option.textContent);option.disabled=!eligible(code);option.hidden=ready&&affiliated.has(code);option.title=ready&&affiliated.has(code)?'Affiliated hub — unavailable':'';}
+ if(ready&&!eligible(select.value)){
+  const first=Array.from(select.options).find(o=>eligible(o.value||o.textContent));
+  if(first){select.value=first.value;select.dispatchEvent(new Event('change',{bubbles:true}));}
+  else select.selectedIndex=-1;
+ }
+ const blocked=!eligible(select.value);
+ for(const id of ['scan-start','scan-resume','validate']){const btn=$(id);if(btn)btn.disabled=blocked;}
+ const note=$('aff-origin-status');if(note)note.textContent=!ready?'Verifying affiliated hubs. Scanning is unavailable until verification succeeds.':blocked?'No eligible hub selected. Scanning is disabled.':`${norm(select.value)} is eligible as an origin hub.`;
+}
+async function refresh(){
+ if(pending)return pending;
+ const serial=++generation;ready=false;affiliated=new Set();sync();
+ pending=(async()=>{
+  const endpoint=$('endpoint')?.value.trim(),key=$('api-key')?.value.trim();
+  if(!endpoint||!key||!window.routeImporterAuth?.isSignedIn?.())throw Error('Sign in to verify affiliated hubs.');
+  const url=new URL(endpoint);url.searchParams.set('action','affiliated-hubs');
+  const token=await window.routeImporterAuth.token();
+  const response=await fetch(url,{headers:{apikey:key,Authorization:'Bearer '+token},cache:'no-store'});
+  const data=await response.json().catch(()=>({}));
+  if(!response.ok||data.ok!==true||!Array.isArray(data.hubs))throw Error(data.error||'Affiliation register could not be verified.');
+  const next=new Set();
+  for(const row of data.hubs){
+   if(!row||typeof row!=='object'||!(/^[A-Z0-9]{3,5}$/.test(norm(row.hub)))||typeof row.is_affiliated!=='boolean')throw Error('Invalid affiliated-hub record.');
+   if(row.is_affiliated)next.add(norm(row.hub));
+  }
+  if(serial!==generation)throw Error('Affiliation settings changed during verification.');
+  affiliated=next;ready=true;sync();return true;
+ })().catch(error=>{ready=false;affiliated=new Set();sync();const note=$('aff-origin-status');if(note)note.textContent=error.message;throw error;}).finally(()=>{pending=null;});
+ return pending;
+}
+async function assertAllowed(hub){await refresh();const selected=norm($('hub')?.value),target=norm(hub??selected);if(!eligible(target)||selected!==target)throw Error('Hub is affiliated, changed, or could not be verified. Operation blocked.');return target;}
+function init(){const select=$('hub');if(!select)return;const note=document.createElement('p');note.id='aff-origin-status';note.className='warn';note.setAttribute('role','status');select.parentElement.append(note);
+ select.addEventListener('change',sync);
+ window.addEventListener('route-importer-auth-changed',()=>{generation++;ready=false;affiliated.clear();sync();if(window.routeImporterAuth?.isSignedIn?.())refresh().catch(()=>{});});
+ window.addEventListener('pageshow',()=>{refresh().catch(()=>{});});
+ $('aff-refresh')?.addEventListener('click',()=>refresh().catch(()=>{}));
+ for(const id of ['endpoint','api-key'])$(id)?.addEventListener('change',()=>{generation++;ready=false;affiliated.clear();sync();refresh().catch(()=>{});});
+ sync();refresh().catch(()=>{});
+}
+window.amOriginGuard={refresh,assertAllowed,isBlocked:()=>!eligible($('hub')?.value)};
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
 })();
