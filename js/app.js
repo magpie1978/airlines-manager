@@ -317,28 +317,28 @@ const SUPABASE_KEY = "sb_publishable_pBMWDgyFgIUGetg6NwkKkA_rMa1--kc";
 let accessToken = null;
 let scannerEndpoint = "";
 
-async function signInForOptimiser() {
-  const email = $("db-email").value.trim();
-  const password = $("db-password").value;
-  const endpoint = $("db-endpoint").value.trim();
-  if (!/^https:\/\/[^/]+\.supabase\.co\/functions\/v1\/[A-Za-z0-9_-]+$/.test(endpoint)) {
-    setStatus("Enter your deployed scanner Edge Function HTTPS endpoint."); return;
+// v7: Shared authentication is owned by the parent Airlines Manager page.
+// Never request a second password or persist access tokens here.
+async function connectSharedSession() {
+  if (!window.parent?.amSharedAuth?.token) {
+    throw new Error("Open Rotation Optimiser from the main Airlines Manager website and sign in using its header.");
   }
-  $("db-password").value = "";
+  const token = await window.parent.amSharedAuth.token();
+  if (!token || typeof token !== "string") throw new Error("Shared sign-in has expired. Sign in again in the main header.");
+  accessToken = token;
+  scannerEndpoint = `${SUPABASE_URL}/functions/v1/am-auth-test`;
+  $("db-auth-status").textContent = "Authenticated through Airlines Manager";
+}
+
+async function reloadSharedData() {
   try {
-    const response = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
-      method:"POST", headers:{apikey:SUPABASE_KEY,"Content-Type":"application/json"},
-      body:JSON.stringify({email,password})
-    });
-    const result = await response.json();
-    if (!response.ok || !result.access_token) throw new Error(result.error_description || result.msg || "Sign-in failed");
-    accessToken = result.access_token;
-    scannerEndpoint = endpoint;
-    $("db-auth-status").textContent = `Signed in as ${email}`;
+    await connectSharedSession();
     await loadData();
   } catch (error) {
-    accessToken = null;
-    setStatus(`Supabase sign-in / load failed: ${error.message}`);
+    accessToken = null; fleetState = null; affiliatedOrigins = null;
+    preparedData = null; updateButtons();
+    $("db-auth-status").textContent = "Shared sign-in required";
+    setStatus(`Cannot load production data: ${error.message}`);
   }
 }
 
@@ -369,7 +369,9 @@ async function loadAffiliatedHubs() {
 }
 
 async function loadSupabaseData() {
-  const hubs = ["BOM","CGK","MPM","BKK","DEL"];
+  if (!(affiliatedOrigins instanceof Set)) throw new Error("Affiliated hub register not verified");
+  const hubs = ["BOM","CGK","MPM","BKK","DEL"].filter(hub => !affiliatedOrigins.has(hub));
+  if (!hubs.length) throw new Error("No eligible origin hubs");
   const batches = await Promise.all(hubs.map(readProductionHub));
   const aircraft = await loadCSVFile("./data/aircraft.csv");
   return {routes:batches.flatMap(x=>x.routes),pricing:batches.flatMap(x=>x.pricing),aircraft};
@@ -426,6 +428,7 @@ function renderConfigurations(fleet) {
 }
 
 async function loadData() {
+  await connectSharedSession();
   fleetState = null;
   affiliatedOrigins = null;
   const generation = ++loadGeneration;
@@ -433,7 +436,10 @@ async function loadData() {
   clearResults(); updateButtons();
   setStatus("Loading production routes and pricing from Supabase…");
   try {
-    const [dataset, , affiliatedHubs] = await Promise.all([loadSupabaseData(),refreshFleet(),loadAffiliatedHubs()]);
+    const affiliatedHubs = await loadAffiliatedHubs();
+    if (generation !== loadGeneration) return;
+    affiliatedOrigins = new Set(affiliatedHubs.map(normaliseHub));
+    const [dataset] = await Promise.all([loadSupabaseData(), refreshFleet()]);
     validateSupabaseData(dataset);
     if (generation !== loadGeneration) return;
     rawRoutes = dataset.routes; rawPricing = dataset.pricing; rawAircraft = dataset.aircraft;
@@ -886,14 +892,12 @@ function initialiseEvents() {
 async function initialise() {
   initialiseEvents();
   updateButtons();
-  $("db-sign-in")?.addEventListener("click",signInForOptimiser);
-  $("db-sign-out")?.addEventListener("click",()=>{
-    accessToken=null; scannerEndpoint=""; fleetState=null; affiliatedOrigins=null; rawRoutes=[]; rawPricing=[]; preparedData=null;
-    availableHubs=[]; optimisationResult=null; clearResults(); renderHubOptions(); updateButtons();
-    $("db-auth-status").textContent="Not signed in";
-    setStatus("Signed out. Sign in to reload production data.");
+  setStatus("Connecting to the shared Airlines Manager session…");
+  $("reload-production")?.addEventListener("click", reloadSharedData);
+  await reloadSharedData();
+  window.addEventListener("focus", () => {
+    if (!accessToken) reloadSharedData();
   });
-  setStatus("Sign in to load production routes and pricing from Supabase.");
 }
 
 initialise();
