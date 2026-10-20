@@ -111,6 +111,11 @@ function activateHub(hub) {
       throw new Error("The optimisation engine returned invalid data.");
     }
     preparedData.hub = HUB;
+    const missingCategory = preparedData.routes.filter(r=>r.category===null).length;
+    const missingPricing = preparedData.routes.filter(r=>!r.pricingValid).length;
+    if (missingCategory || missingPricing) {
+      throw new Error(`${missingCategory} owned routes missing airport categories; ${missingPricing} missing valid pricing. Resolve these before optimisation.`);
+    }
     const fleet = getConfiguredFleet();
     $("routes").textContent = formatNumber(preparedData.routes.length);
     $("models").textContent = formatNumber(fleet.length);
@@ -252,504 +257,75 @@ async function loadCSVFile(path) {
   return csv(await response.text());
 }
 
-// Supabase publishable credentials. Never use a service-role key in browser code.
+// Authenticated production data reader. Access tokens remain in memory only.
 const SUPABASE_URL = "https://eukgodthgusongsbhdwg.supabase.co";
 const SUPABASE_KEY = "sb_publishable_pBMWDgyFgIUGetg6NwkKkA_rMa1--kc";
-const PAGE_SIZE = 1000;
+let accessToken = null;
+let scannerEndpoint = "";
 
-async function fetchSupabaseView(view) {
-  const all = [];
-
-  for (let offset = 0; ; offset += PAGE_SIZE) {
-    const url = new URL(`${SUPABASE_URL}/rest/v1/${view}`);
-
-    url.searchParams.set("select", "*");
-
-    const orderColumns =
-      view === "am_optimizer_aircraft"
-        ? "aircraft_id.asc"
-        : "route_id.asc,hub_code.asc";
-
-    url.searchParams.set("order", orderColumns);
-    url.searchParams.set("limit", String(PAGE_SIZE));
-    url.searchParams.set("offset", String(offset));
-
-    const response = await fetch(url, {
-      cache: "no-store",
-      headers: {
-        apikey: SUPABASE_KEY,
-        Accept: "application/json"
-      }
-    });
-
-    if (!response.ok) {
-      const detail = (await response.text()).slice(0, 240);
-      throw new Error(
-        `${view}: HTTP ${response.status}: ${detail}`
-      );
-    }
-
-    const batch = await response.json();
-
-    if (!Array.isArray(batch)) {
-      throw new Error(`${view}: unexpected response`);
-    }
-
-    all.push(...batch);
-
-    if (batch.length < PAGE_SIZE) break;
+async function signInForOptimiser() {
+  const email = $("db-email").value.trim();
+  const password = $("db-password").value;
+  const endpoint = $("db-endpoint").value.trim();
+  if (!/^https:\/\/[^/]+\.supabase\.co\/functions\/v1\/[A-Za-z0-9_-]+$/.test(endpoint)) {
+    setStatus("Enter your deployed scanner Edge Function HTTPS endpoint."); return;
   }
+  $("db-password").value = "";
+  try {
+    const response = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+      method:"POST", headers:{apikey:SUPABASE_KEY,"Content-Type":"application/json"},
+      body:JSON.stringify({email,password})
+    });
+    const result = await response.json();
+    if (!response.ok || !result.access_token) throw new Error(result.error_description || result.msg || "Sign-in failed");
+    accessToken = result.access_token;
+    scannerEndpoint = endpoint;
+    $("db-auth-status").textContent = `Signed in as ${email}`;
+    await loadData();
+  } catch (error) {
+    accessToken = null;
+    setStatus(`Supabase sign-in / load failed: ${error.message}`);
+  }
+}
 
-  return all;
+async function readProductionHub(hub) {
+  if (!accessToken || !scannerEndpoint) throw new Error("Sign in to load production data");
+  const url = new URL(scannerEndpoint);
+  url.searchParams.set("action","optimizer-data");
+  url.searchParams.set("hub",hub);
+  const response = await fetch(url, {headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${accessToken}`}});
+  const result = await response.json();
+  if (!response.ok || result.ok === false) throw new Error(result.error || `HTTP ${response.status}`);
+  if (!Array.isArray(result.routes) || !Array.isArray(result.pricing)) throw new Error("Unexpected scanner response");
+  return result;
 }
 
 async function loadSupabaseData() {
-  const [routes, pricing, aircraft] = await Promise.all([
-    fetchSupabaseView("am_optimizer_routes"),
-    fetchSupabaseView("am_optimizer_pricing"),
-    fetchSupabaseView("am_optimizer_aircraft")
-  ]);
-  
-  if (!routes.length || !pricing.length || !aircraft.length) {
-    throw new Error("Supabase returned an empty optimiser dataset");
-  }
-  return {
-
-    routes: routes.map(r => ({
-      scan_id: r.scan_id,
-      route: r.route,
-      hub: r.hub_code,
-      airport_code: r.destination_code,
-      ownership_status: r.ownership_status,
-      route_id: r.route_id,
-      distance_km: r.distance_km,
-      category: r.destination_category
-    })),
-    pricing: pricing.map(p => ({
-      scan_id: p.scan_id,
-      route: p.route,
-      distance_km: p.distance_km,
-      hub: p.hub_code,
-      airport_code: String(p.route ?? "").split("/")[1] ?? "",
-      route_id: p.route_id,
-      status: p.status,
-      current_price_economy: p.current_price_economy,
-      current_price_cargo: p.current_price_cargo,
-      current_demand_economy: p.current_demand_economy,
-      current_demand_cargo: p.current_demand_cargo
-    })),
-    aircraft
-  };
+  const hubs = ["BOM","CGK","MPM","BKK","DEL"];
+  const batches = await Promise.all(hubs.map(readProductionHub));
+  const aircraft = await loadCSVFile("./data/aircraft.csv");
+  return {routes:batches.flatMap(x=>x.routes),pricing:batches.flatMap(x=>x.pricing),aircraft};
 }
 
 function validateSupabaseData(candidate) {
-  const requiredHubs = ["BOM", "MPM"];
+  if (!candidate.aircraft.length) throw new Error("Aircraft catalogue missing");
   const routeKeys = new Set();
-  const pricingKeys = new Set();
-  const scanIds = new Set();
-
-  const keyOf = row =>
-    `${normaliseHub(row.hub)}:${String(row.route_id)}`;
-
-  const excludedDestinationsForPricing =
-  new Set(["BKK", "CGK", "DEL"]);
-  
-  // Validate route records.
-  for (const route of candidate.routes) {
-    const hub = normaliseHub(route.hub);
-    const key = keyOf(route);
-
-    if (!requiredHubs.includes(hub)) {
-      throw new Error(`Unexpected route hub: ${hub}`);
-    }
-
-    if (!route.scan_id) {
-      throw new Error(`Missing scan ID for route ${key}`);
-    }
-    scanIds.add(route.scan_id);
-
-    if (routeKeys.has(key)) {
-      throw new Error(`Duplicate route: ${key}`);
-    }
+  for (const r of candidate.routes) {
+    const key = `${r.hub}:${r.airport_code}`;
+    if (routeKeys.has(key)) throw new Error(`Duplicate route ${key}`);
     routeKeys.add(key);
-
-    if (
-(route.route_id === null ||
- route.route_id === undefined ||
- String(route.route_id).trim() === "" ||
- !Number.isSafeInteger(Number(route.route_id))) ||
-      Number(route.route_id) <= 0 ||
-     (route.distance_km === null ||
- route.distance_km === undefined ||
- String(route.distance_km).trim() === "" ||
- !Number.isFinite(Number(route.distance_km))) ||
-      
-      Number(route.distance_km) <= 0 ||
-      !String(route.airport_code ?? "").trim() ||
-      (route.category === null ||
-       route.category === undefined ||
-       String(route.category).trim() === "" ||
-       !Number.isInteger(Number(route.category))) ||
-      Number(route.category) < 1 ||
-        Number(route.category) > 10
-    ) {
-      throw new Error(`Invalid route data: ${key}`);
-    }
-
-    if (route.ownership_status !== "owned") {
-      throw new Error(`Non-owned route: ${key}`);
-    }
   }
-
-  // Validate pricing records and scan consistency.
-  for (const price of candidate.pricing) {
-    const hub = normaliseHub(price.hub);
-    const key = keyOf(price);
-
-    if (
-  price.route_id === null ||
-  price.route_id === undefined ||
-  String(price.route_id).trim() === "" ||
-  !Number.isSafeInteger(Number(price.route_id)) ||
-  Number(price.route_id) <= 0
-) {
-  throw new Error(
-    `Invalid pricing route ID: ${price.route_id}`
-  );
-}
-
-    if (
-  price.distance_km === null ||
-  price.distance_km === undefined ||
-  String(price.distance_km).trim() === "" ||
-  !Number.isFinite(Number(price.distance_km)) ||
-  Number(price.distance_km) <= 0
-) {
-  throw new Error(
-    `Invalid pricing distance: ${key}`
-  );
-}
-
-    const pricingDestination = String(
-  price.airport_code ?? ""
-).trim().toUpperCase();
-
-const expectedRoute = `${hub}/${pricingDestination}`;
-
-if (
-  !/^[A-Z0-9]{3,5}$/.test(pricingDestination) ||
-  String(price.route ?? "").trim().toUpperCase() !== expectedRoute
-) {
-  throw new Error(
-    `Invalid pricing destination or route: ${key}`
-  );
-}
-
-    
-
-    if (!requiredHubs.includes(hub)) {
-      throw new Error(`Unexpected pricing hub: ${hub}`);
-    }
-
-    if (!price.scan_id) {
-      throw new Error(`Missing scan ID for pricing ${key}`);
-    }
-
-    if (String(price.status ?? "").trim().toLowerCase() !== "ok") {
-      throw new Error(
-        `Invalid pricing status for ${key}: ${price.status}`
-      );
-    }
-        
-    scanIds.add(price.scan_id);
-
-    if (pricingKeys.has(key)) {
-      throw new Error(`Duplicate pricing: ${key}`);
-    }
-    pricingKeys.add(key);
-
-const rawValues = [
-  price.current_price_economy,
-  price.current_price_cargo,
-  price.current_demand_economy,
-  price.current_demand_cargo
-];
-
-if (rawValues.some(value =>
-  value === null ||
-  value === undefined ||
-  String(value).trim() === ""
-)) {
-  throw new Error(`Missing pricing values: ${key}`);
-}
-
-const values = rawValues.map(Number);
-    
-    if (
-      values.some(value => !Number.isFinite(value)) ||
-      values[0] <= 0 ||
-      values[1] <= 0 ||
-      values[2] < 0 ||
-      values[3] < 0
-    ) {
-      throw new Error(`Invalid pricing: ${key}`);
-    }
+  const priceKeys = new Set();
+  for (const p of candidate.pricing) {
+    const key = `${p.hub}:${p.airport_code}`;
+    if (priceKeys.has(key)) throw new Error(`Duplicate pricing ${key}`);
+    priceKeys.add(key);
   }
-
-  if (scanIds.size !== 1) {
-    throw new Error(
-      `Inconsistent Supabase scan IDs: ${[...scanIds].join(", ")}`
-    );
+  const missingCategories = candidate.routes.filter(r=>r.ownership_status === "owned" &&
+    (r.category == null || !Number.isInteger(Number(r.category)) || Number(r.category)<1 || Number(r.category)>10));
+  if (missingCategories.length) {
+    console.warn(`[Rotation Optimiser] ${missingCategories.length} owned routes missing airport category. Optimisation will remain blocked for affected hubs.`);
   }
-
-    // Every owned route must have pricing, except BOM/MPM.
-  const allowedUnpricedRoutes = new Set(["BOM:MPM"]);
-
-  for (const route of candidate.routes) {
-    const hub = normaliseHub(route.hub);
-    const destination = String(route.airport_code ?? "")
-      .trim()
-      .toUpperCase();
-
-    const key = `${hub}:${String(route.route_id)}`;
-
-    const routeDestination = String(
-  route.airport_code ?? ""
-).trim().toUpperCase();
-
-const expectedRoute = `${hub}/${routeDestination}`;
-
-if (
-  !/^[A-Z0-9]{3,5}$/.test(routeDestination) ||
-  String(route.route ?? "").trim().toUpperCase() !== expectedRoute
-) {
-  throw new Error(
-    `Invalid owned-route destination or route: ${key}`
-  );
-}
-    
-    const routeName = `${hub}:${destination}`;
-
-if (
-  !excludedDestinationsForPricing.has(destination) &&
-  !pricingKeys.has(key) &&
-  !allowedUnpricedRoutes.has(routeName)
-) {
-  throw new Error(
-        `Missing pricing for owned route ${hub}/${destination} ` +
-        `(route ID ${route.route_id})`
-      );
-    }
-  }
-
-  // The known exception must not hide other pricing problems.
-  console.info(
-    "[Rotation Optimiser] Route-to-pricing consistency validated."
-  );
-
-  // Verify that each pricing record matches its owned route.
-const routesByKey = new Map(
-  candidate.routes.map(route => [
-    `${normaliseHub(route.hub)}:${String(route.route_id)}`,
-    route
-  ])
-);
-
-for (const price of candidate.pricing) {
-  const key =
-    `${normaliseHub(price.hub)}:${String(price.route_id)}`;
-
-  const route = routesByKey.get(key);
-
-  // Pricing may include affiliated routes excluded from
-  // the owned-route dataset.
-  if (!route) continue;
-
-  if (
-    route.route !== price.route ||
-    Number(route.distance_km) !== Number(price.distance_km)
-  ) {
-    throw new Error(
-      `Route/pricing mismatch: ${key}`
-    );
-  }
-}
-
-console.info(
-  "[Rotation Optimiser] Route destinations and distances validated."
-);
-  
-    
-  // Guard against an incomplete aircraft catalogue.
-  // The current validated catalogue contains 150 records.
-  const MIN_AIRCRAFT_RECORDS = 150;
-  
-  if (candidate.aircraft.length < MIN_AIRCRAFT_RECORDS) {
-    throw new Error(
-      `Incomplete aircraft catalogue — ` +
-      `${candidate.aircraft.length} records received; ` +
-      `minimum ${MIN_AIRCRAFT_RECORDS} expected`
-    );
-  }
-  
-  const aircraftIds = new Set();
-
-  for (const aircraft of candidate.aircraft) {
-    const id = String(aircraft.aircraft_id ?? "").trim();
-
-    if (!id) {
-      throw new Error("Aircraft record has no aircraft_id");
-    }
-
-    if (aircraftIds.has(id)) {
-      throw new Error(`Duplicate aircraft ID: ${id}`);
-    }
-
-const rawAircraftValues = [
-  aircraft.category,
-  aircraft.range_km,
-  aircraft.speed_kmh,
-  aircraft.max_seats,
-  aircraft.payload_tonnes
-];
-
-if (rawAircraftValues.some(value =>
-  value === null ||
-  value === undefined ||
-  String(value).trim() === ""
-)) {
-  throw new Error(
-    `Missing aircraft specifications: ${id}`
-  );
-}
-
-const aircraftValues = rawAircraftValues.map(Number);
-    
-    if (
-      !String(aircraft.model ?? "").trim() ||
-      aircraftValues.some(value => !Number.isFinite(value)) ||
-      !Number.isInteger(aircraftValues[0]) ||
-      aircraftValues[0] < 1 ||
-      aircraftValues[0] > 10 ||
-      aircraftValues[1] <= 0 ||
-      aircraftValues[2] <= 0 ||
-      !Number.isInteger(aircraftValues[3]) ||
-      aircraftValues[3] < 0 ||
-      aircraftValues[4] <= 0
-    ) {
-      throw new Error(
-        `Invalid aircraft specifications: ${id}`
-      );
-    }
-    
-    aircraftIds.add(id);
-  }
-  
-  // Validate the prepared datasets using the existing engine.
-  for (const hub of requiredHubs) {
-    const routes = candidate.routes.filter(
-      r => normaliseHub(r.hub) === hub
-    );
-    const pricing = candidate.pricing.filter(
-      p => normaliseHub(p.hub) === hub
-    );
-
-    if (!routes.length || !pricing.length) {
-      throw new Error(`${hub}: missing routes or pricing`);
-    }
-
-    const prepared = prepare(routes, pricing, candidate.aircraft);
-
-    if (!prepared?.routes?.length) {
-      throw new Error(`${hub}: no prepared routes`);
-    }
-
-
-
-  const excludedDestinations = new Set(["BKK", "CGK", "DEL"]);
-  
-  const expectedPreparedRoutes = routes.filter(route =>
-    !excludedDestinations.has(
-      String(route.airport_code ?? "").trim().toUpperCase()
-    )
-  ).length;
-  
-  if (prepared.routes.length !== expectedPreparedRoutes) {
-    throw new Error(
-      `${hub}: route preparation mismatch — ` +
-      `${expectedPreparedRoutes} eligible routes expected, ` +
-      `${prepared.routes.length} prepared`
-    );
-  }
-
-const validPricingKeys = new Set(
-  pricing
-    .filter(price =>
-      String(price.status ?? "").trim().toLowerCase() === "ok"
-    )
-    .map(price =>
-      `${normaliseHub(price.hub)}:${String(price.route_id)}`
-    )
-);
-
-    const expectedPricedRoutes = routes.filter(route =>
-      !excludedDestinations.has(
-        String(route.airport_code ?? "").trim().toUpperCase()
-      ) &&
-      validPricingKeys.has(
-        `${normaliseHub(route.hub)}:${String(route.route_id)}`
-      )
-    ).length;
-
-
-    
-    const actualPricedRoutes = prepared.routes.filter(
-      route => route.pricingValid
-    ).length;
-    
-    if (actualPricedRoutes !== expectedPricedRoutes) {
-      throw new Error(
-        `${hub}: pricing preparation mismatch — ` +
-        `${expectedPricedRoutes} routes expected to be priced, ` +
-        `${actualPricedRoutes} recognised by engine`
-      );
-    }
-
-    if (!getSupportedAircraft(prepared).length) {
-      throw new Error(`${hub}: no supported aircraft`);
-    }
-
-    for (const route of prepared.routes) {
-      if (!route.pricingValid) continue;
-
-      if (
-        ![
-          route.ecoDemand,
-          route.cargoDemand,
-          route.ecoFare,
-          route.cargoFare
-        ].every(Number.isFinite) ||
-        route.ecoDemand < 0 ||
-        route.cargoDemand < 0 ||
-        route.ecoFare <= 0 ||
-        route.cargoFare <= 0
-      ) {
-        throw new Error(
-          `${hub}: invalid prepared pricing for route ${route.id}`
-        );
-      }
-    }
-
-    console.info(
-      `[Rotation Optimiser] ${hub}: independent Supabase validation passed ` +
-      `(${prepared.routes.length} routes; ` +
-      `${prepared.routes.filter(r => r.pricingValid).length} priced).`
-    );
-  }
-
-  console.info(
-    `[Rotation Optimiser] Validated Supabase scan: ${[...scanIds][0]}`
-  );
 }
 
 function getConfiguredFleet() {
@@ -783,81 +359,25 @@ function renderConfigurations(fleet) {
 
 async function loadData() {
   const generation = ++loadGeneration;
-
-  preparedData = null;
-  optimisationResult = null;
-  clearResults();
-  updateButtons();
-
-  setStatus("Loading and validating Supabase data…");
-
+  preparedData = null; optimisationResult = null;
+  clearResults(); updateButtons();
+  setStatus("Loading production routes and pricing from Supabase…");
   try {
-    let dataset;
-    let sourceMessage;
-
-    try {
-      // Supabase is now the primary data source.
-      const candidate = await loadSupabaseData();
-
-      validateSupabaseData(candidate);
-
-      dataset = candidate;
-      activeDataSource = "Supabase";
-      sourceMessage = "Supabase (independently validated)";
-
-    } catch (error) {
-      console.warn(
-        "[Rotation Optimiser] Supabase validation failed:",
-        error
-      );
-
-      // CSV is retained as an emergency fallback.
-      setStatus("Supabase unavailable. Loading CSV fallback…");
-
-      const [csvRoutes, csvPricing, csvAircraft] =
-        await Promise.all(DATA_FILES.map(loadCSVFile));
-
-      dataset = {
-        routes: csvRoutes,
-        pricing: csvPricing,
-        aircraft: csvAircraft
-      };
-
-      activeDataSource = "CSV";
-      sourceMessage =
-        `CSV fallback — Supabase validation failed: ${error.message}`;
-    }
-
+    const dataset = await loadSupabaseData();
+    validateSupabaseData(dataset);
     if (generation !== loadGeneration) return;
-
-    rawRoutes = dataset.routes;
-    rawPricing = dataset.pricing;
-    rawAircraft = dataset.aircraft;
-
-    availableHubs = discoverHubs(rawRoutes, rawPricing);
-
-    if (!availableHubs.length) {
-      throw new Error("No matching hubs in route and pricing data");
-    }
-
-    HUB = availableHubs.includes(HUB)
-      ? HUB
-      : availableHubs[0];
-
+    rawRoutes = dataset.routes; rawPricing = dataset.pricing; rawAircraft = dataset.aircraft;
+    activeDataSource = "Supabase";
+    availableHubs = discoverHubs(rawRoutes,rawPricing);
+    if (!availableHubs.length) throw new Error("No hubs with both routes and pricing");
+    HUB = availableHubs.includes(HUB) ? HUB : availableHubs[0];
     activateHub(HUB);
-
-    const normalStatus = $("status")?.textContent ?? "";
-    setStatus(`${sourceMessage}. ${normalStatus}`);
-
+    const status = $("status")?.textContent || "";
+    setStatus(`Production Supabase data loaded. ${status}`);
   } catch (error) {
-    console.error(
-      "[Rotation Optimiser] Data loading failed:",
-      error
-    );
-
-    preparedData = null;
-    setStatus(`Data loading error: ${error.message}`);
-    updateButtons();
+    console.error("[Rotation Optimiser] Supabase load failed",error);
+    preparedData = null; updateButtons();
+    setStatus(`Supabase loading failed: ${error.message}. No CSV fallback was used.`);
   }
 }
 
@@ -1273,7 +793,14 @@ function initialiseEvents() {
 async function initialise() {
   initialiseEvents();
   updateButtons();
-  await loadData();
+  $("db-sign-in")?.addEventListener("click",signInForOptimiser);
+  $("db-sign-out")?.addEventListener("click",()=>{
+    accessToken=null; scannerEndpoint=""; rawRoutes=[]; rawPricing=[]; preparedData=null;
+    availableHubs=[]; optimisationResult=null; clearResults(); renderHubOptions(); updateButtons();
+    $("db-auth-status").textContent="Not signed in";
+    setStatus("Signed out. Sign in to reload production data.");
+  });
+  setStatus("Sign in to load production routes and pricing from Supabase.");
 }
 
 initialise();
