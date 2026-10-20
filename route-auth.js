@@ -29,6 +29,7 @@ function save(data){
  if(!data.access_token||!data.refresh_token)throw Error('Supabase did not return a complete user session.');
  session={...data,expires_at:Date.now()+Math.max(0,(Number(data.expires_in)||3600)-60)*1000};
  status();
+ window.dispatchEvent(new CustomEvent('route-importer-auth-changed',{detail:{signedIn:true}}));
 }
 async function login(){
  try{
@@ -55,8 +56,10 @@ $('auth-password').addEventListener('keydown',e=>{if(e.key==='Enter')login()});
 $('auth-logout').addEventListener('click',()=>{
  const refresh=session?.refresh_token;session=null;status();
  $('scan-log').textContent='Signed out. Local session cleared.';
+ window.dispatchEvent(new CustomEvent('route-importer-auth-changed',{detail:{signedIn:false}}));
  // No persistent session; token is not retained after logout.
 });
-window.routeImporterAuth={token};
+window.routeImporterAuth={token, isSignedIn:()=>Boolean(session?.access_token)};
+window.dispatchEvent(new CustomEvent('route-importer-auth-changed',{detail:{signedIn:Boolean(session?.access_token)}}));
 status();
 })();
