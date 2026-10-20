@@ -2153,6 +2153,52 @@ function selectAllAvailableRoutes() {
 }
     
 
+    /* Affiliation guard: read-only register, fail closed on access errors. */
+    let affiliatedOrigins = new Set();
+    let affiliationVerified = false;
+
+    async function refreshAffiliatedOrigins() {
+      affiliationVerified = false;
+      const response = await fetch(
+        `${SUPABASE_URL}/rest/v1/am_affiliated_hubs?select=*`,
+        { headers: {
+          apikey: SUPABASE_PUBLISHABLE_KEY,
+          Authorization: `Bearer ${SUPABASE_PUBLISHABLE_KEY}`
+        }, cache: "no-store" }
+      );
+      if (!response.ok) throw new Error(
+        `Cannot verify affiliated hubs (HTTP ${response.status}). Pricing is blocked until the affiliation register is accessible.`
+      );
+      const records = await response.json();
+      if (!Array.isArray(records)) throw new Error("Invalid affiliation register response.");
+      if (records.length && !records.some(row => "hub_code" in row)) {
+        throw new Error("Affiliation register lacks hub_code; pricing blocked.");
+      }
+      const next = new Set();
+      for (const row of records) {
+        const code = String(row.hub_code || "").trim().toUpperCase();
+        if (!code) continue;
+        // Support common active-state columns; absent flag means a register entry is affiliated.
+        const enabled = row.is_active ?? row.active ?? row.enabled ?? true;
+        if (enabled === true || enabled === 1 || enabled === "true") next.add(code);
+      }
+      affiliatedOrigins = next;
+      affiliationVerified = true;
+      return next;
+    }
+
+    function eligibleOrigin(row) {
+      const code = rowHubCode(row);
+      return affiliationVerified && !!code && !affiliatedOrigins.has(code);
+    }
+
+    async function requireEligibleOrigins(rows) {
+      await refreshAffiliatedOrigins();
+      if (rows.some(row => !eligibleOrigin(row))) {
+        throw new Error("An affiliated or unidentified origin hub is blocked from price changes.");
+      }
+    }
+
     function rowHubCode(row) {
     
       return String(
@@ -2203,9 +2249,7 @@ function selectAllAvailableRoutes() {
               []
             );
     
-      return rows.filter(
-        rowMatchesSelectedHub
-      );
+      return rows.filter(row => eligibleOrigin(row) && rowMatchesSelectedHub(row));
     }
     
     
@@ -2232,7 +2276,7 @@ function selectAllAvailableRoutes() {
         const code =
           rowHubCode(row);
     
-        if (!code) {
+        if (!code || !eligibleOrigin(row)) {
           return;
         }
     
@@ -2318,7 +2362,7 @@ function selectAllAvailableRoutes() {
             ).trim();
     
     
-          if (!code) {
+          if (!code || !affiliationVerified || affiliatedOrigins.has(code)) {
             continue;
           }
     
@@ -2838,6 +2882,7 @@ function updateBatchControls() {
 
   applySelectedButton.disabled =
     count === 0 ||
+    !affiliationVerified ||
     !!activeBatch;
 
 
@@ -3191,12 +3236,7 @@ async function startSelectedBatch() {
       optimiserData?.amendableRoutes ||
       []
     )
-      .filter(
-        row =>
-          selectedRouteIds.has(
-            routeSelectionKey(row)
-          )
-      )
+      .filter(row => eligibleOrigin(row) && selectedRouteIds.has(routeSelectionKey(row)))
       .sort(
         (a, b) => {
 
@@ -3230,6 +3270,15 @@ async function startSelectedBatch() {
     return;
   }
 
+
+  try {
+    await requireEligibleOrigins(rows);
+  } catch (error) {
+    batchStatus.textContent = error.message;
+    selectedRouteIds.clear();
+    updateBatchControls();
+    return;
+  }
 
   batchStatus.textContent =
     `Checking selected routes: 0/${rows.length}…`;
@@ -3630,6 +3679,7 @@ async function startSelectedBatch() {
       statusEl.textContent = "Checking route…";
 
       try {
+        await requireEligibleOrigins([row]);
 const status = await callFunction({
 
   action:
@@ -4109,6 +4159,7 @@ checkbox.checked =
   );
 
 checkbox.disabled =
+  !eligibleOrigin(row) ||
   !!row.price_lock_locked ||
   !!activeBatch;
 
@@ -4213,7 +4264,9 @@ checkbox.addEventListener(
           scanId: currentScanId
         });
 
+        await refreshAffiliatedOrigins();
         optimiserData = result;
+        selectedRouteIds.clear();
         if (result.scan?.id) setCurrentScanId(result.scan.id);
         lastFullRefresh.textContent =
           `Last full refresh: ${formatDateTime(result.scan?.completedAt)}`;
@@ -4234,6 +4287,8 @@ updateBatchControls();
         optimiserView.classList.remove("hidden");
         window.scrollTo({ top: 0, behavior: "smooth" });
       } catch (error) {
+        affiliationVerified = false;
+        selectedRouteIds.clear();
         setActivity(error.message, "error");
       } finally {
         optimiserButton.textContent = "View Optimiser";
