@@ -1,0 +1,4559 @@
+<!DOCTYPE html>
+<html lang="en">
+
+  
+<head>
+  <meta charset="UTF-8">
+
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+  >
+
+  <title>
+    Airlines Manager Price Optimiser
+  </title>
+
+  <style>
+    :root {
+      --bg: #0b0d10;
+      --panel: #13161b;
+      --panel-2: #181c22;
+      --border: #2a3039;
+      --text: #f5f7fa;
+      --muted: #929aa6;
+      --accent: #ccff00;
+      --accent-dark: #9fc700;
+      --danger: #ff5c6c;
+      --warning: #ffbf47;
+      --success: #72e39a;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+
+      font-family:
+        Inter,
+        system-ui,
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        sans-serif;
+
+      background:
+        radial-gradient(
+          circle at top,
+          #171b21 0,
+          var(--bg) 42%
+        );
+
+      color: var(--text);
+    }
+
+    button,
+    input {
+      font: inherit;
+    }
+
+    .page {
+      width: min(1180px, calc(100% - 40px));
+      margin: 0 auto;
+      padding: 42px 0 70px;
+    }
+
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 30px;
+      margin-bottom: 32px;
+    }
+
+    .eyebrow {
+      margin-bottom: 7px;
+
+      color: var(--accent);
+
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: .16em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0;
+
+      font-size: clamp(30px, 5vw, 46px);
+      line-height: 1.05;
+      letter-spacing: -.035em;
+    }
+
+    .subtitle {
+      max-width: 650px;
+      margin: 12px 0 0;
+
+      color: var(--muted);
+
+      font-size: 15px;
+      line-height: 1.6;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+
+      padding: 9px 13px;
+
+      border: 1px solid var(--border);
+      border-radius: 999px;
+
+      background: var(--panel);
+
+      color: var(--muted);
+
+      font-size: 13px;
+      font-weight: 700;
+
+      white-space: nowrap;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+
+      border-radius: 50%;
+
+      background: var(--muted);
+    }
+
+    .status-pill.running .status-dot {
+      background: var(--accent);
+      box-shadow:
+        0 0 12px rgba(204,255,0,.55);
+    }
+
+    .status-pill.complete .status-dot {
+      background: var(--success);
+    }
+
+    .status-pill.failed .status-dot {
+      background: var(--danger);
+    }
+
+    .card {
+      border: 1px solid var(--border);
+      border-radius: 18px;
+
+      background:
+        linear-gradient(
+          180deg,
+          rgba(255,255,255,.025),
+          transparent
+        ),
+        var(--panel);
+
+      box-shadow:
+        0 18px 50px rgba(0,0,0,.22);
+    }
+
+    .scan-card {
+      padding: 26px;
+    }
+
+    .scan-heading {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 20px;
+
+      margin-bottom: 24px;
+    }
+
+    .scan-heading h2 {
+      margin: 0;
+
+      font-size: 20px;
+      letter-spacing: -.02em;
+    }
+
+    .scan-id {
+      margin-top: 5px;
+
+      color: var(--muted);
+
+      font-family: ui-monospace, monospace;
+      font-size: 11px;
+    }
+
+    .progress-section + .progress-section {
+      margin-top: 25px;
+    }
+
+    .progress-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      gap: 15px;
+
+      margin-bottom: 9px;
+    }
+
+    .progress-title {
+      font-size: 15px;
+      font-weight: 750;
+    }
+
+    .progress-meta {
+      margin-top: 4px;
+
+      color: var(--muted);
+
+      font-size: 12px;
+    }
+
+    .progress-percent {
+      font-size: 14px;
+      font-weight: 800;
+    }
+
+    .progress-track {
+      position: relative;
+
+      width: 100%;
+      height: 11px;
+
+      overflow: hidden;
+
+      border: 1px solid #303741;
+      border-radius: 999px;
+
+      background: #090b0e;
+    }
+
+    .progress-fill {
+      width: 0;
+      height: 100%;
+
+      border-radius: inherit;
+
+      background: var(--accent);
+
+      transition: width .35s ease;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns:
+        repeat(4, minmax(0, 1fr));
+
+      gap: 12px;
+
+      margin-top: 26px;
+    }
+
+    .stat {
+      padding: 16px;
+
+      border: 1px solid var(--border);
+      border-radius: 13px;
+
+      background: var(--panel-2);
+    }
+
+    .stat-label {
+      color: var(--muted);
+
+      font-size: 11px;
+      font-weight: 750;
+      letter-spacing: .05em;
+      text-transform: uppercase;
+    }
+
+    .stat-value {
+      margin-top: 6px;
+
+      font-size: 23px;
+      font-weight: 800;
+      letter-spacing: -.03em;
+    }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+
+      margin-top: 25px;
+    }
+
+    .btn {
+      min-height: 43px;
+      padding: 0 18px;
+
+      border: 1px solid var(--border);
+      border-radius: 10px;
+
+      background: var(--panel-2);
+
+      color: var(--text);
+
+      font-weight: 750;
+
+      cursor: pointer;
+
+      transition:
+        transform .15s ease,
+        border-color .15s ease,
+        background .15s ease;
+    }
+
+    .btn:hover:not(:disabled) {
+      transform: translateY(-1px);
+      border-color: #4a535f;
+    }
+
+    .btn-primary {
+      border-color: var(--accent);
+
+      background: var(--accent);
+
+      color: #0a0c0f;
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      background: #d7ff35;
+    }
+
+    .btn:disabled {
+      opacity: .38;
+      cursor: not-allowed;
+    }
+
+    .activity {
+      margin-top: 18px;
+      padding: 15px 17px;
+
+      border: 1px solid var(--border);
+      border-radius: 11px;
+
+      background: #0d1014;
+    }
+
+    .activity-title {
+      margin-bottom: 5px;
+
+      color: var(--muted);
+
+      font-size: 11px;
+      font-weight: 750;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+    }
+
+    .activity-text {
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .activity-text.error {
+      color: var(--danger);
+    }
+
+    .activity-text.success {
+      color: var(--success);
+    }
+
+    .spinner {
+      display: inline-block;
+
+      width: 12px;
+      height: 12px;
+
+      margin-right: 8px;
+
+      border: 2px solid rgba(255,255,255,.25);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+
+      vertical-align: -2px;
+
+      animation:
+        spin .75s linear infinite;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    .config-warning {
+      margin-bottom: 20px;
+      padding: 15px 18px;
+
+      border: 1px solid rgba(255,191,71,.4);
+      border-radius: 12px;
+
+      background: rgba(255,191,71,.07);
+
+      color: #ffd58a;
+
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    @media (
+      max-width: 760px
+    ) {
+      .page {
+        width:
+          min(100% - 24px, 1180px);
+
+        padding-top: 25px;
+      }
+
+      .topbar {
+        flex-direction: column;
+      }
+
+      .stats {
+        grid-template-columns:
+          repeat(2, minmax(0, 1fr));
+      }
+
+      .scan-heading {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+    }
+
+    /* =========================================================
+       OPTIMISER RESULTS
+       ========================================================= */
+    .optimiser-view { margin-top: 24px; }
+    .optimiser-toolbar {
+      display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+      margin: 18px 0;
+    }
+    .optimiser-toolbar input,
+    .optimiser-toolbar select {
+      min-height: 42px; padding: 0 12px; border: 1px solid var(--border);
+      border-radius: 10px; background: var(--panel-2); color: var(--text);
+    }
+    .optimiser-toolbar input { flex: 1 1 220px; min-width: 180px; }
+    .optimiser-summary {
+      display: grid; grid-template-columns: repeat(5, minmax(0,1fr));
+      gap: 12px; margin: 20px 0;
+    }
+    .summary-card {
+      padding: 18px; border: 1px solid var(--border); border-radius: 14px;
+      background: var(--panel-2);
+    }
+    .summary-card h3 { margin: 0 0 12px; font-size: 14px; }
+    .summary-big { font-size: 28px; font-weight: 850; letter-spacing: -.03em; }
+    .summary-lines { margin-top: 10px; color: var(--muted); font-size: 12px; line-height: 1.7; }
+    .tabs { display: flex; gap: 8px; margin-top: 22px; }
+    .tab.active { border-color: var(--accent); color: var(--accent); }
+    .results-meta { color: var(--muted); font-size: 12px; margin: 10px 0; }
+    .results-wrap {
+      overflow-x: auto; border: 1px solid var(--border); border-radius: 14px;
+      background: var(--panel);
+    }
+    .results-table { width: 100%; border-collapse: collapse; min-width: 1180px; }
+    .results-table th, .results-table td {
+      padding: 12px 10px; border-bottom: 1px solid var(--border);
+      text-align: right; font-size: 12px; white-space: nowrap;
+    }
+    .results-table th {
+      position: sticky; top: 0; z-index: 1; background: #11151a;
+      color: var(--muted); font-size: 10px; text-transform: uppercase;
+      letter-spacing: .05em;
+    }
+    .results-table th:first-child, .results-table td:first-child { text-align: left; }
+    .results-table tbody tr { cursor: pointer; }
+    .results-table tbody tr:hover { background: rgba(255,255,255,.025); }
+    .route-code { font-weight: 850; font-size: 13px; }
+    .raise { color: var(--success); font-weight: 800; }
+    .reduce { color: var(--danger); font-weight: 800; }
+    .unchanged { color: var(--muted); }
+    .no-capacity { color: var(--warning); }
+    .target-price { color: var(--accent); font-weight: 850; }
+    .detail-row td {
+      text-align: left !important; white-space: normal !important;
+      background: #0d1014; padding: 16px !important;
+    }
+    .calc-grid {
+      display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px;
+    }
+    .calc-box {
+      padding: 14px; border: 1px solid var(--border); border-radius: 10px;
+      background: var(--panel-2); line-height: 1.65; color: var(--muted);
+    }
+    .calc-box strong { color: var(--text); }
+    .empty-state { padding: 34px; text-align: center; color: var(--muted); }
+    .back-row { display:flex; justify-content:space-between; align-items:center; gap:12px; }
+    .optimiser-actions { display:flex; flex-wrap:wrap; gap:10px; justify-content:flex-end; align-items:center; }
+    .refresh-info { margin-top:7px; color:var(--muted); font-size:12px; line-height:1.5; }
+    .refresh-info strong { color:var(--text); }
+    .route-refresh { color:var(--muted); font-size:10px; }
+    .cabin-cell { min-width: 205px; text-align: left !important; }
+    .cabin-price-line { display:flex; align-items:baseline; gap:6px; white-space:nowrap; }
+    .cabin-current { color:var(--text); font-weight:700; }
+    .cabin-arrow { color:var(--muted); }
+    .cabin-change { font-weight:800; margin-left:2px; }
+    .cabin-meta { margin-top:4px; color:var(--muted); font-size:10px; white-space:nowrap; }
+
+    .browser-apply {
+      margin-top: 14px; padding: 14px; border: 1px solid rgba(204,255,0,.28);
+      border-radius: 10px; background: rgba(204,255,0,.045);
+    }
+    .browser-apply-title { color: var(--text); font-weight: 800; margin-bottom: 6px; }
+    .browser-apply-copy { color: var(--muted); font-size: 12px; line-height: 1.55; margin-bottom: 10px; }
+    .browser-apply-status { margin-left: 10px; color: var(--muted); font-size: 12px; }
+    .batch-bar { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin:12px 0 4px; }
+    .batch-status { color:var(--muted); font-size:12px; }
+    .batch-bar select { min-height:43px; padding:0 12px; border:1px solid var(--border); border-radius:10px; background:var(--panel-2); color:var(--text); }
+    .route-select { width:18px; height:18px; accent-color:var(--accent); cursor:pointer; }
+    .batch-panel { margin:12px 0; padding:14px; border:1px solid rgba(204,255,0,.28); border-radius:10px; background:rgba(204,255,0,.045); }
+    .batch-panel strong { color:var(--text); }
+
+    @media (max-width:1000px) {
+      .optimiser-summary { grid-template-columns: repeat(2, minmax(0,1fr)); }
+    }
+    @media (max-width:760px) {
+      .optimiser-summary { grid-template-columns: 1fr; }
+      .calc-grid { grid-template-columns: 1fr; }
+    }
+
+  </style>
+</head>
+
+
+<body>
+
+  <main class="page">
+
+    <header class="topbar">
+
+      <div>
+        <div class="eyebrow">
+          Airlines Manager
+        </div>
+
+        <h1>
+          Price Optimiser
+        </h1>
+
+        <p class="subtitle">
+          Scan your route data, calculate Economy, Business,
+          First and Cargo target prices and review changes
+          before anything is applied.
+        </p>
+      </div>
+
+
+      <div
+        id="statusPill"
+        class="status-pill"
+      >
+        <span class="status-dot"></span>
+
+        <span id="statusText">
+          Loading
+        </span>
+      </div>
+
+    </header>
+
+
+    <div
+      id="configWarning"
+      class="config-warning hidden"
+    >
+      Add your Supabase project URL and browser-safe
+      publishable/anon key to the configuration section
+      near the top of the JavaScript.
+    </div>
+
+
+    <section class="card scan-card">
+
+      <div class="scan-heading">
+
+        <div>
+          <h2>
+            Route scan
+          </h2>
+
+          <div
+            id="scanIdText"
+            class="scan-id"
+          ></div>
+        </div>
+
+        <div id="overallText">
+          Loading…
+        </div>
+
+      </div>
+
+
+      <!-- AUDIT -->
+
+      <div class="progress-section">
+
+        <div class="progress-header">
+
+          <div>
+            <div class="progress-title">
+              Audit prices
+            </div>
+
+            <div
+              id="auditMeta"
+              class="progress-meta"
+            >
+              —
+            </div>
+          </div>
+
+          <div
+            id="auditPercent"
+            class="progress-percent"
+          >
+            0%
+          </div>
+
+        </div>
+
+
+        <div class="progress-track">
+
+          <div
+            id="auditBar"
+            class="progress-fill"
+          ></div>
+
+        </div>
+
+      </div>
+
+
+      <!-- PRICING -->
+
+      <div class="progress-section">
+
+        <div class="progress-header">
+
+          <div>
+            <div class="progress-title">
+              Pricing & demand
+            </div>
+
+            <div
+              id="pricingMeta"
+              class="progress-meta"
+            >
+              —
+            </div>
+          </div>
+
+          <div
+            id="pricingPercent"
+            class="progress-percent"
+          >
+            0%
+          </div>
+
+        </div>
+
+
+        <div class="progress-track">
+
+          <div
+            id="pricingBar"
+            class="progress-fill"
+          ></div>
+
+        </div>
+
+      </div>
+
+
+      <!-- STATS -->
+
+      <div class="stats">
+
+        <div class="stat">
+          <div class="stat-label">
+            Audit routes
+          </div>
+
+          <div
+            id="auditRoutes"
+            class="stat-value"
+          >
+            0
+          </div>
+        </div>
+
+
+        <div class="stat">
+          <div class="stat-label">
+            Pricing routes
+          </div>
+
+          <div
+            id="pricingRoutes"
+            class="stat-value"
+          >
+            0
+          </div>
+        </div>
+
+
+        <div class="stat">
+          <div class="stat-label">
+            Pages complete
+          </div>
+
+          <div
+            id="pagesComplete"
+            class="stat-value"
+          >
+            0
+          </div>
+        </div>
+
+
+        <div class="stat">
+          <div class="stat-label">
+            Elapsed
+          </div>
+
+          <div
+            id="elapsed"
+            class="stat-value"
+          >
+            00:00
+          </div>
+        </div>
+
+      </div>
+
+
+      <!-- CONTROLS -->
+
+      <div class="controls">
+
+        <button
+          id="continueButton"
+          class="btn btn-primary"
+          type="button"
+        >
+          Continue Scan
+        </button>
+
+
+        <button
+          id="pauseButton"
+          class="btn"
+          type="button"
+          disabled
+        >
+          Pause
+        </button>
+
+
+        <button
+          id="refreshButton"
+          class="btn"
+          type="button"
+        >
+          Refresh Status
+        </button>
+
+
+        <button
+          id="optimiserButton"
+          class="btn"
+          type="button"
+          disabled
+        >
+          View Optimiser
+        </button>
+
+      </div>
+
+
+      <!-- ACTIVITY -->
+
+      <div class="activity">
+
+        <div class="activity-title">
+          Activity
+        </div>
+
+        <div
+          id="activityText"
+          class="activity-text"
+        >
+          Loading scan status…
+        </div>
+
+      </div>
+
+    </section>
+
+
+    <section id="optimiserView" class="card scan-card optimiser-view hidden">
+      <div class="back-row">
+        <div>
+          <div class="eyebrow">Formula targets</div>
+          <h2 style="margin:0">Price Optimiser</h2>
+          <div class="progress-meta">Economy, Business, First and Cargo targets calculated from the completed scan.</div>
+          <div id="lastFullRefresh" class="refresh-info">Last full refresh: —</div>
+        </div>
+        <div class="optimiser-actions">
+          <button id="fullRefreshButton" class="btn btn-primary" type="button">Full Refresh</button>
+          <button id="backToScanButton" class="btn" type="button">Back to Scan</button>
+        </div>
+      </div>
+
+      <div id="optimiserSummary" class="optimiser-summary"></div>
+
+      <div class="tabs">
+        <button id="amendableTab" class="btn tab active" type="button">Amendable</button>
+        <button id="lockedTab" class="btn tab" type="button">Locked</button>
+      </div>
+
+    <div class="optimiser-toolbar">
+    
+      <select id="hubFilter" aria-label="Hub">
+        <option value="all">All hubs</option>
+      </select>
+    
+      <input
+        id="routeSearch"
+        type="search"
+        placeholder="Search route, e.g. BKK/KAN"
+      >
+      
+        <select id="cabinFilter">
+          <option value="all">All cabins</option>
+          <option value="economy">Economy</option>
+          <option value="business">Business</option>
+          <option value="first">First</option>
+          <option value="cargo">Cargo</option>
+        </select>
+        <select id="changeFilter">
+          <option value="all">All changes</option>
+          <option value="raise">Raise</option>
+          <option value="reduce">Reduce</option>
+          <option value="unchanged">Unchanged</option>
+          <option value="no-capacity">No capacity</option>
+        </select>
+        <select id="sortFilter">
+          <option value="route">Route A–Z</option>
+          <option value="eco-change-desc">Economy change ↓</option>
+          <option value="eco-change-asc">Economy change ↑</option>
+          <option value="bus-change-desc">Business change ↓</option>
+          <option value="bus-change-asc">Business change ↑</option>
+          <option value="first-change-desc">First change ↓</option>
+          <option value="first-change-asc">First change ↑</option>
+          <option value="cargo-change-desc">Cargo change ↓</option>
+          <option value="cargo-change-asc">Cargo change ↑</option>
+          <option value="eco-remaining-desc">Economy remaining ↓</option>
+          <option value="bus-remaining-desc">Business remaining ↓</option>
+          <option value="first-remaining-desc">First remaining ↓</option>
+          <option value="cargo-remaining-desc">Cargo remaining ↓</option>
+        </select>
+      </div>
+
+      <div class="batch-bar">
+      
+        <button
+          id="selectAllButton"
+          class="btn"
+          type="button"
+        >
+          Select All
+        </button>
+      
+        <button
+          id="applySelectedButton"
+          class="btn btn-primary"
+          type="button"
+          disabled
+        >
+          Apply selected (0)
+        </button>
+      
+        <button
+          id="clearSelectedButton"
+          class="btn"
+          type="button"
+          disabled
+        >
+          Clear selection
+        </button>
+      
+        <span
+          id="batchStatus"
+          class="batch-status"
+        >
+          Select unlocked routes for a batch.
+        </span>
+      
+      </div>
+      
+      <div
+        id="batchPanel"
+        class="batch-panel hidden"
+      ></div>
+
+      <div id="resultsMeta" class="results-meta"></div>
+      <div class="results-wrap">
+        <table class="results-table">
+          <thead>
+            <tr>
+              <th>Route</th>
+              <th>Distance</th>
+              <th>Economy</th>
+              <th>Business</th>
+              <th>First</th>
+              <th>Cargo</th>
+              <th>Last refreshed</th>
+            </tr>
+          </thead>
+          <tbody id="optimiserRows"></tbody>
+        </table>
+        <div id="optimiserEmpty" class="empty-state hidden">No routes match these filters.</div>
+      </div>
+    </section>
+
+  </main>
+
+
+  <script>
+    /* =========================================================
+       CONFIGURATION
+       =========================================================
+
+       Use ONLY the browser-safe Supabase publishable/anon key.
+
+       NEVER put any of these here:
+
+       AM_USERNAME
+       AM_PASSWORD
+       AM_SERVICE_ROLE_KEY
+       sb_secret_...
+
+    ========================================================= */
+
+    const SUPABASE_URL =
+      "https://eukgodthgusongsbhdwg.supabase.co";
+
+    const SUPABASE_PUBLISHABLE_KEY =
+      "sb_publishable_pBMWDgyFgIUGetg6NwkKkA_rMa1--kc";
+
+
+    /*
+     * Active scan is discovered from the Edge Function.
+     * A Full Refresh replaces this with the newly-created scan.
+     */
+    let currentScanId = null;
+    const PRICE_TEST_HUB = "CGK"; // Explicit test hub; never fall back to another hub.
+    let selectedScanVerified = false;
+
+
+    /*
+     * Existing Edge Function.
+     */
+    const FUNCTION_NAME =
+      "am-auth-test";
+
+
+    const BATCH_SIZE = 5;
+
+
+    /* =========================================================
+       STATE
+    ========================================================= */
+
+    let running = false;
+    let pauseRequested = false;
+
+    let latestStatus = null;
+
+    let timerStartedAt = null;
+    let timerInterval = null;
+
+
+    /* =========================================================
+       ELEMENTS
+    ========================================================= */
+
+    const statusPill =
+      document.getElementById(
+        "statusPill"
+      );
+
+    const statusText =
+      document.getElementById(
+        "statusText"
+      );
+
+    const scanIdText =
+      document.getElementById(
+        "scanIdText"
+      );
+
+    const overallText =
+      document.getElementById(
+        "overallText"
+      );
+
+    const auditMeta =
+      document.getElementById(
+        "auditMeta"
+      );
+
+    const pricingMeta =
+      document.getElementById(
+        "pricingMeta"
+      );
+
+    const auditPercent =
+      document.getElementById(
+        "auditPercent"
+      );
+
+    const pricingPercent =
+      document.getElementById(
+        "pricingPercent"
+      );
+
+    const auditBar =
+      document.getElementById(
+        "auditBar"
+      );
+
+    const pricingBar =
+      document.getElementById(
+        "pricingBar"
+      );
+
+    const auditRoutes =
+      document.getElementById(
+        "auditRoutes"
+      );
+
+    const pricingRoutes =
+      document.getElementById(
+        "pricingRoutes"
+      );
+
+    const pagesComplete =
+      document.getElementById(
+        "pagesComplete"
+      );
+
+    const elapsed =
+      document.getElementById(
+        "elapsed"
+      );
+
+    const activityText =
+      document.getElementById(
+        "activityText"
+      );
+
+    const continueButton =
+      document.getElementById(
+        "continueButton"
+      );
+
+    const pauseButton =
+      document.getElementById(
+        "pauseButton"
+      );
+
+    const refreshButton =
+      document.getElementById(
+        "refreshButton"
+      );
+
+    const optimiserButton =
+      document.getElementById(
+        "optimiserButton"
+      );
+
+    const configWarning =
+      document.getElementById(
+        "configWarning"
+      );
+
+
+
+    /* =========================================================
+       CONFIG CHECK
+    ========================================================= */
+
+    function configurationIsValid() {
+
+      return (
+        SUPABASE_URL.startsWith(
+          "https://"
+        ) &&
+
+        !SUPABASE_URL.includes(
+          "YOUR-PROJECT"
+        ) &&
+
+        SUPABASE_PUBLISHABLE_KEY &&
+
+        !SUPABASE_PUBLISHABLE_KEY.includes(
+          "YOUR-PUBLISHABLE"
+        )
+      );
+    }
+
+
+    /* =========================================================
+       FUNCTION URL
+    ========================================================= */
+
+    function functionUrl(
+      params = {}
+    ) {
+
+      const url =
+        new URL(
+          `${SUPABASE_URL}/functions/v1/${FUNCTION_NAME}`
+        );
+
+
+      for (
+        const [
+          key,
+          value
+        ]
+        of Object.entries(params)
+      ) {
+
+        if (
+          value !== null &&
+          value !== undefined &&
+          value !== ""
+        ) {
+          url.searchParams.set(
+            key,
+            String(value)
+          );
+        }
+      }
+
+
+      return url.toString();
+    }
+
+
+    /* =========================================================
+       EDGE FUNCTION REQUEST
+    ========================================================= */
+
+    async function callFunction(
+      params
+    ) {
+
+      const sharedAuth = window.parent?.amSharedAuth;
+      if (!sharedAuth || typeof sharedAuth.token !== "function") {
+        throw new Error("Open Price Optimiser through the main Airlines Manager application (#price), not as a standalone HTML page.");
+      }
+      const sharedToken = await sharedAuth.token();
+      const response =
+        await fetch(
+          functionUrl(
+            params
+          ),
+          {
+            method: "GET",
+
+            headers: {
+              "apikey":
+                SUPABASE_PUBLISHABLE_KEY,
+
+              "Authorization":
+                `Bearer ${sharedToken}`,
+            },
+          }
+        );
+
+
+      let result;
+
+
+      try {
+        result =
+          await response.json();
+
+      } catch {
+        throw new Error(
+          `Edge Function returned HTTP ${response.status} with an invalid JSON response`
+        );
+      }
+
+
+      if (
+        !response.ok
+      ) {
+
+        throw new Error(
+          result?.message ||
+          result?.error ||
+          `HTTP ${response.status}`
+        );
+      }
+
+
+      return result;
+    }
+
+
+    /* =========================================================
+       FORMATTING
+    ========================================================= */
+
+    function formatNumber(
+      value
+    ) {
+
+      return Number(
+        value || 0
+      ).toLocaleString(
+        "en-GB"
+      );
+    }
+
+
+    function percentage(
+      complete,
+      total
+    ) {
+
+      if (!total) {
+        return 0;
+      }
+
+
+      return Math.min(
+        100,
+        Math.round(
+          complete /
+          total *
+          100
+        )
+      );
+    }
+
+
+    function formatDateTime(value) {
+      if (!value) return "—";
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return "—";
+      return new Intl.DateTimeFormat("en-GB", {
+        dateStyle: "medium",
+        timeStyle: "medium"
+      }).format(date);
+    }
+
+
+    function setCurrentScanId(scanId) {
+      currentScanId = scanId || null;
+      selectedScanVerified = false;
+      scanIdText.textContent = currentScanId
+        ? `Scan ${currentScanId}`
+        : "No completed scan found";
+    }
+
+
+    /* =========================================================
+       ACTIVITY
+    ========================================================= */
+
+    function setActivity(
+      message,
+      type = ""
+    ) {
+
+      activityText.className =
+        "activity-text";
+
+
+      if (type) {
+        activityText.classList.add(
+          type
+        );
+      }
+
+
+      activityText.innerHTML =
+        message;
+    }
+
+
+    /* =========================================================
+       TIMER
+    ========================================================= */
+
+    function startTimer() {
+
+      if (
+        timerStartedAt
+      ) {
+        return;
+      }
+
+
+      timerStartedAt =
+        Date.now();
+
+
+      timerInterval =
+        setInterval(
+          updateTimer,
+          1000
+        );
+
+
+      updateTimer();
+    }
+
+
+    function stopTimer() {
+
+      if (
+        timerInterval
+      ) {
+        clearInterval(
+          timerInterval
+        );
+      }
+
+
+      timerInterval = null;
+    }
+
+
+    function updateTimer() {
+
+      if (
+        !timerStartedAt
+      ) {
+        elapsed.textContent =
+          "00:00";
+
+        return;
+      }
+
+
+      const seconds =
+        Math.floor(
+          (
+            Date.now() -
+            timerStartedAt
+          ) /
+          1000
+        );
+
+
+      const minutes =
+        Math.floor(
+          seconds / 60
+        );
+
+
+      const remainder =
+        seconds % 60;
+
+
+      elapsed.textContent =
+        `${String(minutes).padStart(2, "0")}:${String(remainder).padStart(2, "0")}`;
+    }
+
+
+    /* =========================================================
+       STATUS PILL
+    ========================================================= */
+
+    function setStatusPill(
+      status
+    ) {
+
+      statusPill.className =
+        "status-pill";
+
+
+      if (
+        status === "complete"
+      ) {
+
+        statusPill.classList.add(
+          "complete"
+        );
+
+        statusText.textContent =
+          "Complete";
+
+        return;
+      }
+
+
+      if (
+        status === "failed"
+      ) {
+
+        statusPill.classList.add(
+          "failed"
+        );
+
+        statusText.textContent =
+          "Attention required";
+
+        return;
+      }
+
+
+      if (
+        running
+      ) {
+
+        statusPill.classList.add(
+          "running"
+        );
+
+        statusText.textContent =
+          "Scanning";
+
+        return;
+      }
+
+
+      statusText.textContent =
+        "Paused";
+    }
+
+
+    /* =========================================================
+       RENDER PROGRESS
+    ========================================================= */
+
+    function renderStatus(
+      result
+    ) {
+
+      latestStatus =
+        result;
+      optimiserButton.dataset.affiliationBlocked = "false";
+
+      // A finished scan is not necessarily eligible for optimisation.
+      const scanHubs = result?.scan?.hubs || result?.hubs || result?.scan?.hub_code || result?.scan?.hubCode || result?.scan?.hub;
+      const scanCodes = (Array.isArray(scanHubs) ? scanHubs : [scanHubs])
+        .map(h => String(typeof h === 'object' && h !== null ? (h.hub_code || h.hubCode || h.hub || '') : (h || '')).toUpperCase())
+        .filter(Boolean);
+      const blockedScan = !affiliationVerified || scanCodes.length === 0 || scanCodes.some(code => affiliatedOrigins.has(code));
+      optimiserButton.dataset.affiliationBlocked = blockedScan ? "true" : "false";
+
+      const audit =
+        result.progress.audit;
+
+      const pricing =
+        result.progress.pricing;
+
+
+      const auditPct =
+        percentage(
+          audit.pagesComplete,
+          audit.totalPages
+        );
+
+
+      const pricingPct =
+        percentage(
+          pricing.pagesComplete,
+          pricing.totalPages
+        );
+
+
+      auditMeta.textContent =
+        `${audit.pagesComplete} of ${audit.totalPages} pages · ${formatNumber(audit.routes)} routes`;
+
+
+      pricingMeta.textContent =
+        `${pricing.pagesComplete} of ${pricing.totalPages} pages · ${formatNumber(pricing.routes)} routes`;
+
+
+      auditPercent.textContent =
+        `${auditPct}%`;
+
+      pricingPercent.textContent =
+        `${pricingPct}%`;
+
+
+      auditBar.style.width =
+        `${auditPct}%`;
+
+      pricingBar.style.width =
+        `${pricingPct}%`;
+
+
+      auditRoutes.textContent =
+        formatNumber(
+          audit.routes
+        );
+
+      pricingRoutes.textContent =
+        formatNumber(
+          pricing.routes
+        );
+
+
+      pagesComplete.textContent =
+        formatNumber(
+          audit.pagesComplete +
+          pricing.pagesComplete
+        );
+
+
+      const totalPages =
+        audit.totalPages +
+        pricing.totalPages;
+
+
+      const completedPages =
+        audit.pagesComplete +
+        pricing.pagesComplete;
+
+
+      overallText.textContent =
+        `${completedPages} / ${totalPages} pages`;
+
+
+      optimiserButton.disabled =
+        !result.complete || blockedScan;
+
+
+      if (
+        result.complete
+      ) {
+
+        continueButton.disabled =
+          true;
+
+        pauseButton.disabled =
+          true;
+
+        if (blockedScan) {
+          statusPill.className = "status-pill failed";
+          statusText.textContent = scanCodes.some(code => affiliatedOrigins.has(code))
+            ? "Affiliated hub — blocked" : "Hub eligibility unverified";
+        } else {
+          setStatusPill("complete");
+        }
+
+      } else {
+
+        continueButton.disabled =
+          running;
+
+        pauseButton.disabled =
+          !running;
+
+        setStatusPill(
+          "running"
+        );
+      }
+    }
+
+
+    /* =========================================================
+       LOAD STATUS
+    ========================================================= */
+
+    async function loadStatus() {
+
+      if (!currentScanId || !selectedScanVerified) {
+        throw new Error("No verified CGK scan is selected.");
+      }
+
+      if (
+        !configurationIsValid()
+      ) {
+
+        configWarning.classList.remove(
+          "hidden"
+        );
+
+        setActivity(
+          "Supabase configuration is required.",
+          "error"
+        );
+
+        continueButton.disabled =
+          true;
+
+        refreshButton.disabled =
+          true;
+
+        return null;
+      }
+
+
+      refreshButton.disabled =
+        true;
+
+
+      try {
+
+        const result =
+          await callFunction({
+            action:
+              "status",
+
+            scanId:
+              currentScanId,
+          });
+
+
+        await refreshAffiliatedOrigins();
+        renderStatus(
+          result
+        );
+
+
+        if (
+          result.complete
+        ) {
+
+          if (optimiserButton.dataset.affiliationBlocked === "true") {
+            setActivity("Scan history is complete, but this hub is affiliated or its eligibility cannot be verified. Optimisation is disabled.", "error");
+          } else {
+            setActivity("Scan complete. The optimiser data is ready.", "success");
+          }
+
+        } else {
+
+          const audit =
+            result.progress.audit;
+
+          const pricing =
+            result.progress.pricing;
+
+
+          if (
+            audit.pagesComplete <
+            audit.totalPages
+          ) {
+
+            setActivity(
+              `Ready to continue Audit from page ${audit.nextPage}.`
+            );
+
+          } else {
+
+            setActivity(
+              `Audit complete. Ready to continue Pricing from page ${pricing.nextPage}.`
+            );
+          }
+        }
+
+
+        return result;
+
+      } catch (
+        error
+      ) {
+
+        setStatusPill(
+          "failed"
+        );
+
+
+        setActivity(
+          error.message,
+          "error"
+        );
+
+
+        throw error;
+
+      } finally {
+
+        refreshButton.disabled =
+          false;
+      }
+    }
+
+
+    /* =========================================================
+       RUN SCAN
+    ========================================================= */
+
+    async function runScan() {
+
+      if (running) return;
+      if (!currentScanId || !selectedScanVerified) {
+        setActivity("Select a verified CGK scan before continuing.", "error");
+        return;
+      }
+
+      running = true;
+      pauseRequested = false;
+
+
+      continueButton.disabled =
+        true;
+
+      pauseButton.disabled =
+        false;
+
+      refreshButton.disabled =
+        true;
+
+
+      startTimer();
+
+      setStatusPill(
+        "running"
+      );
+
+
+      try {
+
+        while (
+          running &&
+          !pauseRequested
+        ) {
+
+          /*
+           * We intentionally don't specify mode or startPage.
+           *
+           * The Edge Function itself decides:
+           *
+           * 1. first incomplete Audit page;
+           * 2. then first incomplete Pricing page.
+           */
+
+          setActivity(
+            `<span class="spinner"></span>Scanning next batch…`
+          );
+
+
+          const result =
+            await callFunction({
+              action:
+                "batch",
+
+              scanId:
+                currentScanId,
+
+              batchSize:
+                BATCH_SIZE,
+            });
+
+
+          renderStatus(
+            result
+          );
+
+
+          if (
+            !result.ok
+          ) {
+
+            const failure =
+              result.failedPage;
+
+
+            throw new Error(
+              failure?.error ||
+              "A scan batch failed"
+            );
+          }
+
+
+          if (
+            result.complete
+          ) {
+
+            running =
+              false;
+
+            setActivity(
+              "Scan complete. All Audit and Pricing pages have been stored.",
+              "success"
+            );
+
+            break;
+          }
+
+
+          const batch =
+            result.batch;
+
+
+          const successfulPages =
+            batch.pages
+              .filter(
+                page =>
+                  page.ok
+              );
+
+
+          const lastPage =
+            successfulPages.length
+              ? successfulPages[
+                  successfulPages.length - 1
+                ].page
+              : null;
+
+
+          const next =
+            result.next;
+
+
+          if (
+            next
+          ) {
+
+            const finished =
+              lastPage !== null
+                ? `${batch.mode} page ${lastPage} complete. `
+                : "";
+
+
+            setActivity(
+              `${finished}Next: ${next.mode} page ${next.startPage}.`
+            );
+          }
+
+
+          /*
+           * Give the UI/event loop a moment before
+           * starting another Edge Function invocation.
+           */
+          await new Promise(
+            resolve =>
+              setTimeout(
+                resolve,
+                750
+              )
+          );
+        }
+
+
+        if (
+          pauseRequested
+        ) {
+
+          running =
+            false;
+
+
+          setActivity(
+            "Scan paused safely. Completed batches are already stored."
+          );
+        }
+
+      } catch (
+        error
+      ) {
+
+        running =
+          false;
+
+
+        setStatusPill(
+          "failed"
+        );
+
+
+        setActivity(
+          error.message,
+          "error"
+        );
+
+      } finally {
+
+        running =
+          false;
+
+
+        stopTimer();
+
+
+        continueButton.disabled =
+          latestStatus?.complete
+            ? true
+            : false;
+
+
+        pauseButton.disabled =
+          true;
+
+        refreshButton.disabled =
+          false;
+
+
+        if (
+          latestStatus &&
+          !latestStatus.complete &&
+          !activityText.classList.contains(
+            "error"
+          )
+        ) {
+          setStatusPill(
+            "paused"
+          );
+        }
+      }
+    }
+
+
+    /* =========================================================
+       PAUSE
+    ========================================================= */
+
+    function pauseScan() {
+
+      if (
+        !running
+      ) {
+        return;
+      }
+
+
+      pauseRequested =
+        true;
+
+
+      pauseButton.disabled =
+        true;
+
+
+      setActivity(
+        `<span class="spinner"></span>Pausing after the current batch…`
+      );
+    }
+
+
+    /* =========================================================
+       OPTIMISER
+    ========================================================= */
+
+    function openOptimiser() {
+      if (!selectedScanVerified || !latestStatus?.complete || optimiserButton.dataset.affiliationBlocked === "true") return;
+      loadOptimiser();
+    }
+
+
+    /* =========================================================
+       OPTIMISER RESULTS UI
+       ========================================================= */
+    
+    const scanCard =
+      document.querySelector(".scan-card");
+    
+    const optimiserView =
+      document.getElementById("optimiserView");
+    
+    const optimiserSummary =
+      document.getElementById("optimiserSummary");
+    
+    const optimiserRows =
+      document.getElementById("optimiserRows");
+    
+    const optimiserEmpty =
+      document.getElementById("optimiserEmpty");
+    
+    const resultsMeta =
+      document.getElementById("resultsMeta");
+    
+    const hubFilter =
+      document.getElementById("hubFilter");
+    
+    const routeSearch =
+      document.getElementById("routeSearch");
+    
+    const cabinFilter =
+      document.getElementById("cabinFilter");
+    
+    const changeFilter =
+      document.getElementById("changeFilter");
+    
+    const sortFilter =
+      document.getElementById("sortFilter");
+    
+    const amendableTab =
+      document.getElementById("amendableTab");
+    
+    const lockedTab =
+      document.getElementById("lockedTab");
+    
+    const backToScanButton =
+      document.getElementById("backToScanButton");
+    
+    const fullRefreshButton =
+      document.getElementById("fullRefreshButton");
+    
+    const lastFullRefresh =
+      document.getElementById("lastFullRefresh");
+    
+    const applySelectedButton =
+      document.getElementById("applySelectedButton");
+    
+    const clearSelectedButton =
+      document.getElementById("clearSelectedButton");
+    
+    const batchStatus =
+      document.getElementById("batchStatus");
+
+    const selectAllButton =
+      document.getElementById("selectAllButton");
+    
+    const batchPanel = 
+      document.getElementById("batchPanel");
+    
+    let optimiserData = null;
+    let optimiserTab = "amendable";
+    let expandedRouteId = null;
+    
+    const selectedRouteIds =
+      new Set();
+    
+    let activeBatch = null;
+    let batchWorker = null;
+
+
+    function routeSelectionKey(row) {
+
+  return `${rowHubCode(row)}:${Number(row.route_id)}`;
+}
+
+    
+function selectAllAvailableRoutes() {
+
+  if (
+    !optimiserData ||
+    activeBatch
+  ) {
+    return;
+  }
+
+
+  if (
+    optimiserTab !==
+    "amendable"
+  ) {
+
+    batchStatus.textContent =
+      "Switch to the Amendable tab to select routes.";
+
+    return;
+  }
+
+
+  /*
+   * Start with routes belonging to the
+   * currently selected hub.
+   */
+  const source =
+    getHubFilteredRoutes(
+      "amendable"
+    );
+
+
+  const search =
+    routeSearch.value
+      .trim()
+      .toUpperCase();
+
+
+  /*
+   * Apply the same filters as the
+   * optimiser table.
+   */
+  let rows =
+    source.filter(
+      row => {
+
+        const routeMatches =
+          !search ||
+          String(
+            row.route || ""
+          )
+            .toUpperCase()
+            .includes(
+              search
+            );
+
+
+        return (
+          routeMatches &&
+          matchesChange(row)
+        );
+      }
+    );
+
+
+  /*
+   * Keep the same ordering as the table.
+   */
+  rows =
+    sortRoutes(
+      rows
+    );
+
+
+  /*
+   * Never select routes currently carrying
+   * the 24-hour price lock.
+   */
+  const availableRows =
+    rows.filter(
+      row =>
+        !row.price_lock_locked
+    );
+
+
+  selectedRouteIds.clear();
+
+
+  /*
+   * Select EVERY matching unlocked route.
+   */
+  for (
+    const row of
+    availableRows
+  ) {
+
+    selectedRouteIds.add(
+      routeSelectionKey(
+        row
+      )
+    );
+  }
+
+
+  renderOptimiserRows();
+
+  updateBatchControls();
+
+
+  const selected =
+    selectedRouteIds.size;
+
+
+  batchStatus.textContent =
+    selected
+      ? `${selected} available route${selected === 1 ? "" : "s"} selected.`
+      : "No currently available routes match these filters.";
+}
+    
+
+    /* Affiliation guard: read-only register, fail closed on access errors. */
+    let affiliatedOrigins = new Set();
+    let affiliationVerified = false;
+
+    async function refreshAffiliatedOrigins() {
+      // Use the same authenticated Edge Function as the Rotation Optimiser.
+      // Never use the publishable key as a user's bearer token.
+      affiliationVerified = false;
+      affiliatedOrigins = new Set();
+
+      const result = await callFunction({ action: "affiliated-hubs" });
+
+      // Accept the supported list envelopes without silently treating an
+      // unexpected response as an empty affiliation register.
+      const records = Array.isArray(result) ? result
+        : Array.isArray(result?.hubs) ? result.hubs
+        : Array.isArray(result?.affiliatedHubs) ? result.affiliatedHubs
+        : Array.isArray(result?.affiliations) ? result.affiliations
+        : Array.isArray(result?.data) ? result.data
+        : null;
+
+      if (!records) {
+        throw new Error(
+          "The affiliated-hubs Edge Function returned an unrecognised response. Pricing remains blocked."
+        );
+      }
+
+      const next = new Set();
+      for (const row of records) {
+        if (!row || typeof row !== "object" || !("hub" in row || "hub_code" in row || "hubCode" in row)) {
+          throw new Error("Affiliation register contains an invalid hub entry. Pricing remains blocked.");
+        }
+        const code = String(row.hub ?? row.hub_code ?? row.hubCode ?? "").trim().toUpperCase();
+        if (!/^[A-Z0-9]{3,5}$/.test(code)) {
+          throw new Error("Affiliation register contains an invalid hub code. Pricing remains blocked.");
+        }
+        const enabled = row.is_affiliated ?? row.is_active ?? row.active ?? row.enabled ?? true;
+        if (enabled === true || enabled === 1 || enabled === "true") next.add(code);
+      }
+
+      affiliatedOrigins = next;
+      affiliationVerified = true;
+      return next;
+    }
+
+    function eligibleOrigin(row) {
+      const code = rowHubCode(row);
+      return affiliationVerified && !!code && !affiliatedOrigins.has(code);
+    }
+
+    async function requireEligibleOrigins(rows) {
+      await refreshAffiliatedOrigins();
+      if (rows.some(row => !eligibleOrigin(row))) {
+        throw new Error("An affiliated or unidentified origin hub is blocked from price changes.");
+      }
+    }
+
+    function rowHubCode(row) {
+    
+      return String(
+        row?.hub_code ||
+        row?.hubCode ||
+        ""
+      )
+        .trim()
+        .toUpperCase();
+    }
+    
+    
+    function selectedHubCode() {
+    
+      return hubFilter?.value || "all";
+    }
+    
+    
+    function rowMatchesSelectedHub(row) {
+    
+      const selected =
+        selectedHubCode();
+    
+      if (selected === "all") {
+        return true;
+      }
+    
+      return (
+        rowHubCode(row) === selected
+      );
+    }
+    
+    
+    function getHubFilteredRoutes(type) {
+    
+      if (!optimiserData) {
+        return [];
+      }
+    
+      const rows =
+        type === "locked"
+          ? (
+              optimiserData.lockedRoutes ||
+              []
+            )
+          : (
+              optimiserData.amendableRoutes ||
+              []
+            );
+    
+      return rows.filter(row => eligibleOrigin(row) && rowMatchesSelectedHub(row));
+    }
+    
+    
+    function buildHubFilter() {
+    
+      if (
+        !hubFilter ||
+        !optimiserData
+      ) {
+        return;
+      }
+    
+    
+      const previousValue =
+        hubFilter.value || "all";
+    
+    
+      const hubs =
+        new Map();
+    
+    
+      function addHub(row) {
+    
+        const code =
+          rowHubCode(row);
+    
+        if (!code || !eligibleOrigin(row)) {
+          return;
+        }
+    
+    
+        const name =
+          String(
+            row?.hub_name ||
+            row?.hubName ||
+            ""
+          ).trim();
+    
+    
+        if (
+          !hubs.has(code) ||
+          (
+            !hubs.get(code) &&
+            name
+          )
+        ) {
+    
+          hubs.set(
+            code,
+            name
+          );
+        }
+      }
+    
+    
+      /*
+       * Discover hubs from the actual
+       * optimiser route data.
+       */
+    
+      (
+        optimiserData.amendableRoutes ||
+        []
+      ).forEach(addHub);
+    
+    
+      (
+        optimiserData.lockedRoutes ||
+        []
+      ).forEach(addHub);
+    
+    
+      /*
+       * Also use hub metadata returned
+       * by the Edge Function, if present.
+       */
+    
+      const hubMetadata =
+        optimiserData.hubs ||
+        optimiserData.scanHubs ||
+        optimiserData.scan?.hubs ||
+        [];
+    
+    
+      if (
+        Array.isArray(
+          hubMetadata
+        )
+      ) {
+    
+        for (
+          const hub of hubMetadata
+        ) {
+    
+          const code =
+            String(
+              hub?.hub_code ||
+              hub?.hubCode ||
+              ""
+            )
+              .trim()
+              .toUpperCase();
+    
+    
+          const name =
+            String(
+              hub?.hub_name ||
+              hub?.hubName ||
+              ""
+            ).trim();
+    
+    
+          if (!code || !affiliationVerified || affiliatedOrigins.has(code)) {
+            continue;
+          }
+    
+    
+          if (
+            !hubs.has(code) ||
+            (
+              !hubs.get(code) &&
+              name
+            )
+          ) {
+    
+            hubs.set(
+              code,
+              name
+            );
+          }
+        }
+      }
+    
+    
+      /*
+       * Rebuild the dropdown.
+       */
+    
+      hubFilter.innerHTML = "";
+    
+    
+      hubFilter.appendChild(
+        new Option(
+          "All hubs",
+          "all"
+        )
+      );
+    
+    
+      [
+        ...hubs.entries()
+      ]
+        .sort(
+          ([codeA], [codeB]) =>
+            codeA.localeCompare(
+              codeB
+            )
+        )
+        .forEach(
+          ([code, name]) => {
+    
+            const label =
+              name
+                ? `${code} — ${name}`
+                : code;
+    
+    
+            hubFilter.appendChild(
+              new Option(
+                label,
+                code
+              )
+            );
+          }
+        );
+    
+    
+      /*
+       * Preserve the currently selected
+       * hub when the optimiser reloads.
+       */
+    
+      hubFilter.value =
+        (
+          previousValue === "all" ||
+          hubs.has(
+            previousValue
+          )
+        )
+          ? previousValue
+          : "all";
+    }
+
+    function summariseCabin(
+  rows,
+  prefix
+) {
+
+  const summary = {
+    raise: 0,
+    reduce: 0,
+    unchanged: 0,
+    noCapacity: 0
+  };
+
+
+  for (const row of rows) {
+
+    const status =
+      cabinStatus(
+        row,
+        prefix
+      );
+
+
+    if (status === "raise") {
+      summary.raise++;
+    }
+
+    else if (status === "reduce") {
+      summary.reduce++;
+    }
+
+    else if (status === "unchanged") {
+      summary.unchanged++;
+    }
+
+    else if (status === "no-capacity") {
+      summary.noCapacity++;
+    }
+  }
+
+
+  return summary;
+}
+        
+    function numberOrNull(value) {
+      if (value === null || value === undefined || value === "") return null;
+      const n = Number(value);
+      return Number.isFinite(n) ? n : null;
+    }
+
+    function money(value) {
+      const n = numberOrNull(value);
+      return n === null ? "—" : `$${n.toLocaleString("en-GB")}`;
+    }
+
+    function signed(value) {
+      const n = numberOrNull(value);
+      if (n === null) return "—";
+      if (n > 0) return `+${n.toLocaleString("en-GB")}`;
+      return n.toLocaleString("en-GB");
+    }
+
+    function changeClass(change, capacity) {
+      const cap = numberOrNull(capacity);
+      const n = numberOrNull(change);
+      if (cap !== null && cap <= 0) return "no-capacity";
+      if (n > 0) return "raise";
+      if (n < 0) return "reduce";
+      return "unchanged";
+    }
+
+    function cabinStatus(row, prefix) {
+      const capacity = numberOrNull(row[`${prefix}_capacity`]);
+      const change = numberOrNull(row[`${prefix}_change`]);
+      if (capacity !== null && capacity <= 0) return "no-capacity";
+      if (change > 0) return "raise";
+      if (change < 0) return "reduce";
+      return "unchanged";
+    }
+
+function renderOptimiserSummary() {
+
+  if (!optimiserData) {
+    return;
+  }
+
+
+  const amendableRoutes =
+    getHubFilteredRoutes(
+      "amendable"
+    );
+
+
+  const lockedRoutes =
+    getHubFilteredRoutes(
+      "locked"
+    );
+
+
+  const totalRoutes =
+    amendableRoutes.length +
+    lockedRoutes.length;
+
+
+  const economy =
+    summariseCabin(
+      amendableRoutes,
+      "eco"
+    );
+
+
+  const business =
+    summariseCabin(
+      amendableRoutes,
+      "bus"
+    );
+
+
+  const first =
+    summariseCabin(
+      amendableRoutes,
+      "first"
+    );
+
+
+  const cargo =
+    summariseCabin(
+      amendableRoutes,
+      "cargo"
+    );
+
+
+  optimiserSummary.innerHTML = "";
+
+
+  const cards = [
+
+    {
+      title: "Routes",
+
+      big:
+        formatNumber(
+          amendableRoutes.length
+        ),
+
+      lines:
+        `${formatNumber(totalRoutes)} total · ${formatNumber(lockedRoutes.length)} locked`
+    },
+
+
+    {
+      title: "Economy",
+
+      big:
+        formatNumber(
+          economy.raise
+        ),
+
+      lines:
+        `raises · ${formatNumber(economy.reduce)} reductions · ${formatNumber(economy.unchanged)} unchanged · ${formatNumber(economy.noCapacity)} no capacity`
+    },
+
+
+    {
+      title: "Business",
+
+      big:
+        formatNumber(
+          business.raise
+        ),
+
+      lines:
+        `raises · ${formatNumber(business.reduce)} reductions · ${formatNumber(business.unchanged)} unchanged · ${formatNumber(business.noCapacity)} no capacity`
+    },
+
+
+    {
+      title: "First",
+
+      big:
+        formatNumber(
+          first.raise
+        ),
+
+      lines:
+        `raises · ${formatNumber(first.reduce)} reductions · ${formatNumber(first.unchanged)} unchanged · ${formatNumber(first.noCapacity)} no capacity`
+    },
+
+
+    {
+      title: "Cargo",
+
+      big:
+        formatNumber(
+          cargo.raise
+        ),
+
+      lines:
+        `raises · ${formatNumber(cargo.reduce)} reductions · ${formatNumber(cargo.unchanged)} unchanged · ${formatNumber(cargo.noCapacity)} no capacity`
+    }
+
+  ];
+
+
+  for (const card of cards) {
+
+    const el =
+      document.createElement(
+        "div"
+      );
+
+    el.className =
+      "summary-card";
+
+
+    const h =
+      document.createElement(
+        "h3"
+      );
+
+    h.textContent =
+      card.title;
+
+
+    const big =
+      document.createElement(
+        "div"
+      );
+
+    big.className =
+      "summary-big";
+
+    big.textContent =
+      card.big;
+
+
+    const lines =
+      document.createElement(
+        "div"
+      );
+
+    lines.className =
+      "summary-lines";
+
+    lines.textContent =
+      card.lines;
+
+
+    el.append(
+      h,
+      big,
+      lines
+    );
+
+
+    optimiserSummary.appendChild(
+      el
+    );
+  }
+}
+
+
+    function updateOptimiserTabCounts() {
+
+  if (!optimiserData) {
+    return;
+  }
+
+
+  const amendableCount =
+    getHubFilteredRoutes(
+      "amendable"
+    ).length;
+
+
+  const lockedCount =
+    getHubFilteredRoutes(
+      "locked"
+    ).length;
+
+
+  amendableTab.textContent =
+    `Amendable (${formatNumber(amendableCount)})`;
+
+
+  lockedTab.textContent =
+    `Locked (${formatNumber(lockedCount)})`;
+}
+
+    
+
+    
+    function matchesChange(row) {
+      const wanted = changeFilter.value;
+      if (wanted === "all" || optimiserTab === "locked") return true;
+
+      const cabin = cabinFilter.value;
+      const statuses = [];
+
+      if (cabin === "all" || cabin === "economy") {
+        statuses.push(cabinStatus(row, "eco"));
+      }
+      if (cabin === "all" || cabin === "business") {
+        statuses.push(cabinStatus(row, "bus"));
+      }
+      if (cabin === "all" || cabin === "first") {
+        statuses.push(cabinStatus(row, "first"));
+      }
+      if (cabin === "all" || cabin === "cargo") {
+        statuses.push(cabinStatus(row, "cargo"));
+      }
+
+      return statuses.includes(wanted);
+    }
+
+    function sortRoutes(rows) {
+      const mode = sortFilter.value;
+      const copy = [...rows];
+
+      const num = (row, key) => numberOrNull(row[key]) ?? -Infinity;
+
+      copy.sort((a, b) => {
+        switch (mode) {
+          case "eco-change-desc": return num(b,"eco_change") - num(a,"eco_change");
+          case "eco-change-asc": return num(a,"eco_change") - num(b,"eco_change");
+          case "bus-change-desc": return num(b,"bus_change") - num(a,"bus_change");
+          case "bus-change-asc": return num(a,"bus_change") - num(b,"bus_change");
+          case "first-change-desc": return num(b,"first_change") - num(a,"first_change");
+          case "first-change-asc": return num(a,"first_change") - num(b,"first_change");
+          case "cargo-change-desc": return num(b,"cargo_change") - num(a,"cargo_change");
+          case "cargo-change-asc": return num(a,"cargo_change") - num(b,"cargo_change");
+          case "eco-remaining-desc": return num(b,"eco_remaining") - num(a,"eco_remaining");
+          case "bus-remaining-desc": return num(b,"bus_remaining") - num(a,"bus_remaining");
+          case "first-remaining-desc": return num(b,"first_remaining") - num(a,"first_remaining");
+          case "cargo-remaining-desc": return num(b,"cargo_remaining") - num(a,"cargo_remaining");
+          default: return String(a.route || "").localeCompare(String(b.route || ""));
+        }
+      });
+
+      return copy;
+    }
+
+    function encodeOptimiserPayload(payload) {
+      const json = JSON.stringify(payload);
+      const bytes = new TextEncoder().encode(json);
+      let binary = "";
+      for (const byte of bytes) binary += String.fromCharCode(byte);
+      return btoa(binary)
+        .replace(/\+/g, "-")
+        .replace(/\//g, "_")
+        .replace(/=+$/g, "");
+    }
+
+function rowPayload(row) {
+
+  return {
+
+    hubId:
+      Number(row.hub_id),
+
+    hubCode:
+      rowHubCode(row),
+
+    routeId:
+      Number(row.route_id),
+
+    route:
+      row.route || "",
+
+    expected: {
+
+      eco:
+        numberOrNull(
+          row.eco_current_price
+        ),
+
+      bus:
+        numberOrNull(
+          row.bus_current_price
+        ),
+
+      first:
+        numberOrNull(
+          row.first_current_price
+        ),
+
+      cargo:
+        numberOrNull(
+          row.cargo_current_price
+        )
+    },
+
+    targets: {
+
+      eco:
+        numberOrNull(
+          row.eco_target_price
+        ),
+
+      bus:
+        numberOrNull(
+          row.bus_target_price
+        ),
+
+      first:
+        numberOrNull(
+          row.first_target_price
+        ),
+
+      cargo:
+        numberOrNull(
+          row.cargo_target_price
+        )
+    }
+  };
+}
+    
+function updateBatchControls() {
+
+  const count =
+    selectedRouteIds.size;
+
+
+  if (
+    selectAllButton
+  ) {
+
+    selectAllButton.disabled =
+      !!activeBatch ||
+      optimiserTab !==
+        "amendable";
+  }
+
+
+  applySelectedButton.textContent =
+    `Apply selected (${count})`;
+
+
+  applySelectedButton.disabled =
+    count === 0 ||
+    !affiliationVerified ||
+    !!activeBatch;
+
+
+  clearSelectedButton.disabled =
+    count === 0 ||
+    !!activeBatch;
+
+
+  if (
+    !activeBatch
+  ) {
+
+    batchStatus.textContent =
+      count
+        ? `${count} route${count === 1 ? "" : "s"} selected.`
+        : "Select unlocked routes for a batch.";
+  }
+}
+
+    
+/*
+ * Open only the first Airlines Manager route.
+ *
+ * IMPORTANT:
+ * The complete batch is deliberately NOT placed in the URL.
+ * Large batches can contain hundreds or thousands of routes,
+ * which would make the #ambatch URL excessively large.
+ *
+ * #ambatch=handoff tells the Tampermonkey helper to announce
+ * that it is ready. The optimiser then transfers the complete
+ * batch using postMessage.
+ */
+function batchApplyUrl(routes) {
+
+  const firstRoute =
+    routes?.[0];
+
+  if (
+    !firstRoute ||
+    !Number.isInteger(
+      Number(firstRoute.routeId)
+    )
+  ) {
+    throw new Error(
+      "Cannot start batch: first route is invalid."
+    );
+  }
+
+  return (
+    "https://tycoon.airlines-manager.com" +
+    `/marketing/pricing/${Number(firstRoute.routeId)}` +
+    "#ambatch=handoff"
+  );
+}
+
+
+/*
+ * Transfer the complete batch to the AM worker only after
+ * Tampermonkey has explicitly announced that it is ready.
+ */
+function sendBatchHandoff() {
+
+  if (
+    !activeBatch ||
+    !Array.isArray(activeBatch.routes) ||
+    activeBatch.routes.length < 1
+  ) {
+    console.warn(
+      "[AM Optimiser] No active batch is available for handoff."
+    );
+
+    return false;
+  }
+
+
+  if (
+    !batchWorker ||
+    batchWorker.closed
+  ) {
+    console.warn(
+      "[AM Optimiser] Batch worker is unavailable for handoff."
+    );
+
+    return false;
+  }
+
+
+  const message = {
+
+    type:
+      "am-optimiser-batch-handoff",
+
+    version:
+      2,
+
+    routes:
+      activeBatch.routes
+  };
+
+
+  batchWorker.postMessage(
+    message,
+    "https://tycoon.airlines-manager.com"
+  );
+
+
+  console.log(
+    `[AM Optimiser] Batch handed to worker: ${activeBatch.routes.length} routes.`
+  );
+
+
+  return true;
+}
+
+    
+    function sendBatchAck({
+  hubId,
+  hubCode,
+  routeId,
+  ok,
+  error = null
+}) {
+  const message = {
+    type: "am-optimiser-batch-ack",
+    hubId: Number(hubId),
+    hubCode: String(hubCode || "")
+      .trim()
+      .toUpperCase(),
+    routeId: Number(routeId),
+    ok: !!ok
+  };
+
+  if (error) {
+    message.error = String(error);
+  }
+
+  /*
+   * Prefer the worker window we opened.
+   * This remains valid while the worker navigates
+   * between AM route pages.
+   */
+  if (
+    batchWorker &&
+    !batchWorker.closed
+  ) {
+    batchWorker.postMessage(
+      message,
+      "https://tycoon.airlines-manager.com"
+    );
+
+    return;
+  }
+
+  console.warn(
+    "[AM Optimiser] Batch worker is unavailable for acknowledgement.",
+    message
+  );
+}
+    
+
+function renderBatchPanel() {
+
+  if (!activeBatch) {
+
+    batchPanel.classList.add(
+      "hidden"
+    );
+
+    return;
+  }
+
+
+  batchPanel.classList.remove(
+    "hidden"
+  );
+
+
+  const total =
+    activeBatch.routes.length;
+
+
+  const currentIndex =
+    Math.max(
+      0,
+      Math.min(
+        Number(activeBatch.current) || 0,
+        Math.max(
+          total - 1,
+          0
+        )
+      )
+    );
+
+
+  const successful =
+    activeBatch.states.filter(
+      state =>
+        state === "success"
+    ).length;
+
+
+  const failed =
+    activeBatch.states.filter(
+      state =>
+        state === "failed"
+    ).length;
+
+
+  const waiting =
+    activeBatch.states.filter(
+      state =>
+        state === "waiting"
+    ).length;
+
+
+  const currentRoute =
+    activeBatch.routes[
+      currentIndex
+    ];
+
+
+  /*
+   * Do not render hundreds/thousands of route rows.
+   *
+   * Show only the most recent successful routes plus
+   * the currently active route.
+   */
+  const recentStart =
+    Math.max(
+      0,
+      currentIndex - 4
+    );
+
+
+  const recentLines =
+    activeBatch.routes
+      .slice(
+        recentStart,
+        currentIndex + 1
+      )
+      .map(
+        (route, offset) => {
+
+          const index =
+            recentStart +
+            offset;
+
+
+          const state =
+            activeBatch.states[index] ||
+            "waiting";
+
+
+          const icon =
+            state === "success"
+              ? "✓"
+              : state === "working"
+                ? "●"
+                : state === "failed"
+                  ? "✕"
+                  : "○";
+
+
+          return `
+            <div>
+              ${icon}
+              ${index + 1}/${total}
+              ${route.route}
+              — ${state}
+            </div>
+          `;
+        }
+      )
+      .join("");
+
+
+  batchPanel.innerHTML = `
+    <strong>
+      Batch price update
+    </strong>
+
+    <div
+      style="
+        margin-top:10px;
+        line-height:1.7;
+      "
+    >
+
+      <div>
+        <strong>
+          ${successful} / ${total}
+        </strong>
+        verified
+      </div>
+
+      <div>
+        Current:
+        <strong>
+          ${
+            currentRoute?.route ||
+            "waiting for worker"
+          }
+        </strong>
+      </div>
+
+      <div>
+        Waiting:
+        ${waiting}
+        &nbsp; · &nbsp;
+        Failed:
+        ${failed}
+      </div>
+
+      ${
+        recentLines
+          ? `
+              <div
+                style="
+                  margin-top:10px;
+                  padding-top:8px;
+                  border-top:1px solid rgba(255,255,255,.12);
+                "
+              >
+                ${recentLines}
+              </div>
+            `
+          : ""
+      }
+
+    </div>
+  `;
+}
+    
+async function startSelectedBatch() {
+
+  if (
+    !currentScanId ||
+    activeBatch ||
+    selectedRouteIds.size === 0
+  ) {
+    return;
+  }
+
+
+  /*
+   * Resolve the selected composite hub:route keys
+   * against the current optimiser data.
+   */
+  const rows =
+    (
+      optimiserData?.amendableRoutes ||
+      []
+    )
+      .filter(row => eligibleOrigin(row) && selectedRouteIds.has(routeSelectionKey(row)))
+      .sort(
+        (a, b) => {
+
+          const hubCompare =
+            rowHubCode(a).localeCompare(
+              rowHubCode(b)
+            );
+
+          if (hubCompare !== 0) {
+            return hubCompare;
+          }
+
+          return String(
+            a.route || ""
+          ).localeCompare(
+            String(
+              b.route || ""
+            )
+          );
+        }
+      );
+
+
+  if (!rows.length) {
+
+    batchStatus.textContent =
+      "No selected routes are available.";
+
+    updateBatchControls();
+
+    return;
+  }
+
+
+  try {
+    await requireEligibleOrigins(rows);
+  } catch (error) {
+    batchStatus.textContent = error.message;
+    selectedRouteIds.clear();
+    updateBatchControls();
+    return;
+  }
+
+  batchStatus.textContent =
+    `Checking selected routes: 0/${rows.length}…`;
+
+
+  try {
+
+    /*
+     * Preflight every selected route immediately before
+     * starting the batch.
+     *
+     * Keep concurrency bounded so Select All does not
+     * create hundreds of simultaneous requests.
+     */
+    const PREFLIGHT_CONCURRENCY =
+      10;
+
+    const PREFLIGHT_TIMEOUT_MS =
+      30000;
+
+
+    const checks =
+      new Array(
+        rows.length
+      );
+
+
+    let nextCheckIndex =
+      0;
+
+    let completedChecks =
+      0;
+
+
+    async function withTimeout(
+      promise,
+      timeoutMs,
+      label
+    ) {
+
+      let timer;
+
+
+      try {
+
+        return await Promise.race([
+
+          promise,
+
+          new Promise(
+            (
+              _resolve,
+              reject
+            ) => {
+
+              timer =
+                setTimeout(
+                  () => {
+                    reject(
+                      new Error(
+                        `${label} timed out after ${Math.round(timeoutMs / 1000)} seconds.`
+                      )
+                    );
+                  },
+                  timeoutMs
+                );
+              }
+            )
+        ]);
+
+      } finally {
+
+        if (timer) {
+          clearTimeout(
+            timer
+          );
+        }
+      }
+    }
+
+
+    async function preflightWorker() {
+
+      while (true) {
+
+        const index =
+          nextCheckIndex++;
+
+
+        if (
+          index >=
+          rows.length
+        ) {
+          return;
+        }
+
+
+        const row =
+          rows[index];
+
+
+        const routeName =
+          row.route ||
+          row.route_id;
+
+
+        checks[index] =
+          await withTimeout(
+
+            callFunction({
+
+              action:
+                "price-status",
+
+              scanId:
+                currentScanId,
+
+              hubId:
+                Number(
+                  row.hub_id
+                ),
+
+              routeId:
+                Number(
+                  row.route_id
+                )
+            }),
+
+            PREFLIGHT_TIMEOUT_MS,
+
+            `price-status for ${routeName}`
+          );
+
+
+        /*
+         * Only increment after the request
+         * has genuinely completed.
+         */
+        completedChecks++;
+
+
+        batchStatus.textContent =
+          `Checking selected routes: ${completedChecks}/${rows.length}…`;
+      }
+    }
+
+
+    const workerCount =
+      Math.min(
+        PREFLIGHT_CONCURRENCY,
+        rows.length
+      );
+
+
+    await Promise.all(
+      Array.from(
+        {
+          length:
+            workerCount
+        },
+        () =>
+          preflightWorker()
+      )
+    );
+
+
+    /*
+     * Reject anything which is no longer safe
+     * to amend.
+     */
+    const unavailable =
+      checks.filter(
+        status =>
+          !status?.ok ||
+          !status?.amendable ||
+          status?.affiliatedLocked ||
+          status?.priceLock?.locked
+      );
+
+
+    if (
+      unavailable.length
+    ) {
+
+      const descriptions =
+        unavailable.map(
+          status => {
+
+            const route =
+              status?.route ||
+              `route ${status?.routeId ?? "unknown"}`;
+
+
+            if (
+              status?.priceLock?.locked
+            ) {
+
+              return (
+                `${route} — locked until ` +
+                `${formatDateTime(
+                  status.priceLock.unlockAt
+                )}`
+              );
+            }
+
+
+            return (
+              `${route} — no longer amendable`
+            );
+          }
+        );
+
+
+      selectedRouteIds.clear();
+
+
+      /*
+       * Reload the optimiser so newly discovered
+       * price locks are reflected in the table.
+       */
+      await loadOptimiser();
+
+
+      /*
+       * loadOptimiser()/updateBatchControls() resets
+       * batchStatus, so set the explanation afterwards.
+       */
+      batchStatus.textContent =
+        `Batch not started: ${descriptions.join("; ")}`;
+
+
+      return;
+    }
+
+
+    /*
+     * Verify every status response refers to the exact
+     * hub + route requested.
+     */
+    for (
+      let i = 0;
+      i < rows.length;
+      i++
+    ) {
+
+      const row =
+        rows[i];
+
+      const status =
+        checks[i];
+
+
+      if (
+        Number(
+          status?.hubId
+        ) !==
+          Number(
+            row.hub_id
+          ) ||
+        Number(
+          status?.routeId
+        ) !==
+          Number(
+            row.route_id
+          )
+      ) {
+
+        throw new Error(
+          `Route verification mismatch for ${row.route || row.route_id}.`
+        );
+      }
+    }
+
+
+    /*
+     * Build the complete batch in memory.
+     *
+     * This is no longer encoded into the AM URL.
+     */
+    const routes =
+      rows.map(
+        rowPayload
+      );
+
+
+    activeBatch = {
+
+      routes,
+
+      states:
+        routes.map(
+          (
+            _,
+            index
+          ) =>
+            index === 0
+              ? "working"
+              : "waiting"
+        ),
+
+      current:
+        0
+    };
+
+
+    renderBatchPanel();
+
+    updateBatchControls();
+
+
+    /*
+     * The URL contains only the first route plus the
+     * small #ambatch=handoff marker.
+     */
+    const workerUrl =
+      batchApplyUrl(
+        routes
+      );
+
+
+    /*
+     * Open or navigate the single named AM worker.
+     *
+     * Tampermonkey will respond with
+     * am-optimiser-batch-worker-ready.
+     */
+    batchWorker =
+      window.open(
+        workerUrl,
+        "amOptimiserWorker"
+      );
+
+
+    if (
+      !batchWorker
+    ) {
+
+      activeBatch =
+        null;
+
+
+      renderBatchPanel();
+
+      updateBatchControls();
+
+
+      batchStatus.textContent =
+        "Chrome blocked the worker tab. Allow pop-ups and try again.";
+
+
+      return;
+    }
+
+
+    batchStatus.textContent =
+      `Batch started: waiting for AM worker to accept ${routes.length} route${routes.length === 1 ? "" : "s"}…`;
+
+
+  } catch (
+    error
+  ) {
+
+    console.error(
+      "[AM Optimiser] Batch preflight failed:",
+      error
+    );
+
+
+    /*
+     * Nothing should remain marked as an active browser
+     * batch if startup/preflight failed.
+     */
+    activeBatch =
+      null;
+
+
+    renderBatchPanel();
+
+    updateBatchControls();
+
+
+    batchStatus.textContent =
+      `Batch not started: ${error.message}`;
+  }
+}
+
+    
+    function browserApplyUrl(row) {
+      const payload = rowPayload(row);
+
+      return `https://tycoon.airlines-manager.com/marketing/pricing/${row.route_id}#amopt=${encodeOptimiserPayload(payload)}`;
+    }
+
+    async function openBrowserApply(row, button, statusEl) {
+      if (!currentScanId) return;
+
+      button.disabled = true;
+      statusEl.textContent = "Checking route…";
+
+      try {
+        await requireEligibleOrigins([row]);
+const status = await callFunction({
+
+  action:
+    "price-status",
+
+  scanId:
+    currentScanId,
+
+  hubId:
+    Number(row.hub_id),
+
+  routeId:
+    Number(row.route_id)
+});
+
+        
+        if (!status.amendable || status.affiliatedLocked) {
+          statusEl.textContent = "Route locked / non-amendable.";
+          return;
+        }
+
+        if (status.priceLock?.locked) {
+          const unlock = formatDateTime(status.priceLock.unlockAt);
+          statusEl.textContent = `Price locked until ${unlock}.`;
+          return;
+        }
+
+        statusEl.textContent = "Opening Airlines Manager…";
+        window.open(browserApplyUrl(row), "_blank");
+        setTimeout(() => { statusEl.textContent = "Opened in a new tab."; }, 400);
+      } catch (error) {
+        statusEl.textContent = `Could not check route: ${error.message}`;
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+
+    /*
+     * Browser/Tampermonkey completion callback.
+     *
+     * The userscript never writes to Supabase directly. After the native
+     * Airlines Manager POST reloads into its 24-hour locked state, it sends
+     * a small postMessage back to this optimiser tab. The Edge Function then
+     * independently GETs the live AM page, verifies the target prices and
+     * lock state, and only then records the successful update.
+     */
+window.addEventListener(
+  "message",
+  async event => {
+
+    if (
+      event.origin !==
+      "https://tycoon.airlines-manager.com"
+    ) {
+      return;
+    }
+
+
+    const message =
+      event.data;
+
+
+    if (!message) {
+      return;
+    }
+
+
+    /*
+     * New scalable batch handshake.
+     *
+     * The worker has loaded the first AM route and
+     * Tampermonkey is ready to receive the route array.
+     */
+    if (
+      message.type ===
+      "am-optimiser-batch-worker-ready"
+    ) {
+
+      if (
+        !activeBatch
+      ) {
+        return;
+      }
+
+
+      /*
+       * Make sure the ready signal came from the
+       * actual named worker window we opened.
+       */
+      if (
+        batchWorker &&
+        event.source !== batchWorker
+      ) {
+        console.warn(
+          "[AM Optimiser] Ignored batch-ready message from an unexpected AM window."
+        );
+
+        return;
+      }
+
+
+      const firstRoute =
+        activeBatch.routes[0];
+
+
+      if (
+        Number(message.routeId) !==
+        Number(firstRoute?.routeId)
+      ) {
+
+        batchStatus.textContent =
+          "Batch stopped: AM worker opened an unexpected first route.";
+
+        console.error(
+          "[AM Optimiser] Worker route mismatch.",
+          {
+            expected:
+              firstRoute?.routeId,
+
+            received:
+              message.routeId
+          }
+        );
+
+        return;
+      }
+
+
+      if (
+        sendBatchHandoff()
+      ) {
+
+        batchStatus.textContent =
+          `AM worker ready. ${activeBatch.routes.length} route${activeBatch.routes.length === 1 ? "" : "s"} handed over; starting first route…`;
+      }
+
+
+      return;
+    }
+
+
+    /*
+     * Existing route-completion message.
+     */
+    if (
+      message.type !==
+      "am-optimiser-native-submit-complete"
+    ) {
+      return;
+    }
+
+    
+const hubId =
+  Number(message.hubId);
+
+const hubCode =
+  String(
+    message.hubCode || ""
+  )
+    .trim()
+    .toUpperCase();
+
+const routeId =
+  Number(message.routeId);
+
+
+if (
+  !currentScanId ||
+  !Number.isInteger(hubId) ||
+  hubId <= 0 ||
+  !Number.isInteger(routeId) ||
+  routeId <= 0
+) {
+  return;
+}
+      
+      try {
+        const response = await fetch(
+         functionUrl({
+
+  action:
+    "record-browser-success",
+
+  scanId:
+    currentScanId,
+
+  hubId,
+
+  routeId
+}),
+          
+          {
+            method: "POST",
+            headers: {
+              "apikey": SUPABASE_PUBLISHABLE_KEY,
+              "Authorization": `Bearer ${SUPABASE_PUBLISHABLE_KEY}`,
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+  hubId,
+  hubCode,
+  routeId
+})
+            
+          }
+        );
+        const result = await response.json();
+        if (!response.ok || !result?.ok) {
+          throw new Error(result?.message || result?.error || `HTTP ${response.status}`);
+        }
+
+        console.log("[AM Optimiser] Browser update recorded:", result);
+
+        if (activeBatch) {
+          const i = activeBatch.current;
+const expectedRoute =
+  activeBatch.routes[i];
+
+
+const expectedHubId =
+  Number(
+    expectedRoute?.hubId
+  );
+
+
+const expectedRouteId =
+  Number(
+    expectedRoute?.routeId
+  );
+
+
+if (
+  expectedHubId !== hubId ||
+  expectedRouteId !== routeId
+) {
+
+  throw new Error(
+    `Batch expected hub ${expectedHubId} route ${expectedRouteId}, but worker reported hub ${hubId} route ${routeId}.`
+  );
+}
+          
+          activeBatch.states[i] = "success";
+          renderBatchPanel();
+sendBatchAck({
+  hubId,
+  hubCode,
+  routeId,
+  ok: true
+});
+          
+          if (i + 1 < activeBatch.routes.length) {
+            activeBatch.current = i + 1;
+            activeBatch.states[i + 1] = "working";
+            batchStatus.textContent = `Verified ${i + 1}/${activeBatch.routes.length}. Continuing…`;
+            renderBatchPanel();
+          } else {
+            batchStatus.textContent = `Batch complete: ${activeBatch.routes.length}/${activeBatch.routes.length} routes verified.`;
+            activeBatch = null;
+            selectedRouteIds.clear();
+            await loadOptimiser();
+            updateBatchControls();
+          }
+        } else {
+          await loadOptimiser();
+          console.log(`[AM Optimiser] Optimiser refreshed after successful update of route ${routeId}.`);
+        }
+      } catch (error) {
+        console.error("[AM Optimiser] Could not record browser update:", error);
+        if (activeBatch) {
+          const i = activeBatch.current;
+          activeBatch.states[i] = "failed";
+          renderBatchPanel();
+          batchStatus.textContent = `Batch stopped: ${error.message}`;
+sendBatchAck({
+  hubId,
+  hubCode,
+  routeId,
+  ok: false,
+  error: error.message
+});
+          activeBatch = null;
+          updateBatchControls();
+        }
+      }
+    });
+
+    function detailRow(row) {
+      const tr = document.createElement("tr");
+      tr.className = "detail-row";
+
+      const td = document.createElement("td");
+      td.colSpan = 7;
+
+      const grid = document.createElement("div");
+      grid.className = "calc-grid";
+
+      const makeBox = (label, prefix) => {
+        const box = document.createElement("div");
+        box.className = "calc-box";
+
+        const current = numberOrNull(row[`${prefix}_current_price`]);
+        const demand = numberOrNull(row[`${prefix}_demand`]);
+        const remaining = numberOrNull(row[`${prefix}_remaining`]);
+        const capacity = numberOrNull(row[`${prefix}_capacity`]);
+        const target = numberOrNull(row[`${prefix}_target_price`]);
+
+        const title = document.createElement("strong");
+        title.textContent = label;
+
+        const p = document.createElement("div");
+        p.textContent =
+          capacity !== null && capacity <= 0
+            ? `No scheduled capacity. Current price remains ${money(current)}.`
+            : `Formula target = floor(${money(current)} × (1 + ${formatNumber(remaining)} ÷ (3 × ${formatNumber(demand)}))) = ${money(target)}. Capacity ${formatNumber(capacity)}; remaining demand ${formatNumber(remaining)}.`;
+
+        box.append(title, p);
+        return box;
+      };
+
+      grid.append(
+        makeBox("Economy calculation", "eco"),
+        makeBox("Business calculation", "bus"),
+        makeBox("First calculation", "first"),
+        makeBox("Cargo calculation", "cargo")
+      );
+
+      const meta = document.createElement("div");
+      meta.className = "progress-meta";
+      meta.style.marginTop = "12px";
+      meta.textContent =
+        `Route ID ${row.route_id} · Pricing page ${row.pricing_page ?? "—"} · Audit page ${row.audit_page ?? "—"} · Last refreshed ${formatDateTime(row.last_refreshed_at)}`;
+
+      const applyBox = document.createElement("div");
+      applyBox.className = "browser-apply";
+
+      const applyTitle = document.createElement("div");
+      applyTitle.className = "browser-apply-title";
+      applyTitle.textContent = "Apply via Chrome / Tampermonkey";
+
+      const applyCopy = document.createElement("div");
+      applyCopy.className = "browser-apply-copy";
+      applyCopy.textContent =
+        "Checks the optimiser's 24-hour update history, then opens the native Airlines Manager pricing page. The Tampermonkey helper verifies the live prices and fills the targets. Nothing is submitted until you confirm on the Airlines Manager page.";
+
+      const applyButton = document.createElement("button");
+      applyButton.type = "button";
+      applyButton.className = "btn btn-primary";
+      applyButton.textContent = "Apply prices in Airlines Manager";
+
+      if (row.price_lock_locked) {
+        applyButton.disabled = true;
+        applyButton.textContent = "Price locked";
+      }
+
+      const applyStatus = document.createElement("span");
+      applyStatus.className = "browser-apply-status";
+
+      if (row.price_lock_locked) {
+        applyStatus.textContent =
+          `Locked until ${formatDateTime(row.price_lock_until)}.`;
+      }
+
+      applyButton.addEventListener("click", event => {
+        event.stopPropagation();
+        openBrowserApply(row, applyButton, applyStatus);
+      });
+
+      applyBox.append(applyTitle, applyCopy, applyButton, applyStatus);
+
+      td.append(grid, meta, applyBox);
+      tr.appendChild(td);
+      return tr;
+    }
+
+function renderOptimiserRows() {
+  if (!optimiserData) return;
+
+  const source =
+    getHubFilteredRoutes(
+      optimiserTab
+    );
+
+  const search =
+    routeSearch.value
+      .trim()
+      .toUpperCase();
+  
+      let rows = source.filter(row => {
+        const routeMatches =
+          !search || String(row.route || "").toUpperCase().includes(search);
+        return routeMatches && matchesChange(row);
+      });
+
+      rows = sortRoutes(rows);
+
+      optimiserRows.innerHTML = "";
+      optimiserEmpty.classList.toggle("hidden", rows.length !== 0);
+      resultsMeta.textContent =
+        `${formatNumber(rows.length)} of ${formatNumber(source.length)} ${optimiserTab} routes`;
+
+      const cabinDefinitions = {
+        economy: { label: "Economy", prefix: "eco" },
+        business: { label: "Business", prefix: "bus" },
+        first: { label: "First", prefix: "first" },
+        cargo: { label: "Cargo", prefix: "cargo" }
+      };
+
+      function cabinCell(row, cabinKey) {
+        const cabin = cabinDefinitions[cabinKey];
+        const prefix = cabin.prefix;
+        const td = document.createElement("td");
+        td.className = `cabin-cell cabin-${cabinKey}`;
+
+        const current = row[`${prefix}_current_price`];
+        const target = row[`${prefix}_target_price`];
+        const change = row[`${prefix}_change`];
+        const capacity = row[`${prefix}_capacity`];
+        const remaining = row[`${prefix}_remaining`];
+
+        const priceLine = document.createElement("div");
+        priceLine.className = "cabin-price-line";
+
+        const currentEl = document.createElement("span");
+        currentEl.className = "cabin-current";
+        currentEl.textContent = money(current);
+
+        const arrow = document.createElement("span");
+        arrow.className = "cabin-arrow";
+        arrow.textContent = "→";
+
+        const targetEl = document.createElement("span");
+        targetEl.className = "target-price";
+        targetEl.textContent = money(target);
+
+        const changeEl = document.createElement("span");
+        changeEl.className = `cabin-change ${changeClass(change, capacity)}`;
+        changeEl.textContent = `(${signed(change)})`;
+
+        priceLine.append(currentEl, arrow, targetEl, changeEl);
+
+        const metaLine = document.createElement("div");
+        metaLine.className = "cabin-meta";
+        metaLine.textContent = `Cap ${formatNumber(capacity)} · Rem ${formatNumber(remaining)}`;
+
+        td.append(priceLine, metaLine);
+        return td;
+      }
+
+      const selectedCabin = cabinFilter.value;
+      const visibleCabins = selectedCabin === "all"
+        ? ["economy", "business", "first", "cargo"]
+        : [selectedCabin];
+
+      const headerCells = document.querySelectorAll(".results-table thead th");
+      const cabinHeaderIndexes = { economy: 2, business: 3, first: 4, cargo: 5 };
+      for (const [key, index] of Object.entries(cabinHeaderIndexes)) {
+        headerCells[index].classList.toggle("hidden", !visibleCabins.includes(key));
+      }
+
+      for (const row of rows) {
+        const tr = document.createElement("tr");
+
+        const routeTd = document.createElement("td");
+        routeTd.className = "route-code";
+
+        if (optimiserTab === "amendable") {
+          const checkbox = document.createElement("input");
+          checkbox.type = "checkbox";
+          checkbox.className = "route-select";
+const selectionKey =
+  routeSelectionKey(row);
+
+checkbox.checked =
+  selectedRouteIds.has(
+    selectionKey
+  );
+
+checkbox.disabled =
+  !eligibleOrigin(row) ||
+  !!row.price_lock_locked ||
+  !!activeBatch;
+
+checkbox.style.marginRight =
+  "9px";
+
+checkbox.addEventListener(
+  "click",
+  event =>
+    event.stopPropagation()
+);
+
+checkbox.addEventListener(
+  "change",
+  event => {
+
+    event.stopPropagation();
+
+    if (
+      checkbox.checked
+    ) {
+
+      selectedRouteIds.add(
+        selectionKey
+      );
+
+    } else {
+
+      selectedRouteIds.delete(
+        selectionKey
+      );
+    }
+
+    updateBatchControls();
+  }
+);
+          routeTd.appendChild(checkbox);
+        }
+
+        const routeName = document.createElement("span");
+        routeName.textContent = row.route || "—";
+        routeTd.appendChild(routeName);
+
+        if (row.price_lock_locked) {
+          const lockBadge = document.createElement("div");
+          lockBadge.textContent =
+            `Price locked until ${formatDateTime(row.price_lock_until)}`;
+          lockBadge.style.marginTop = "4px";
+          lockBadge.style.fontSize = "11px";
+          lockBadge.style.fontWeight = "700";
+          lockBadge.style.color = "var(--warning)";
+          routeTd.appendChild(lockBadge);
+        }
+
+        tr.appendChild(routeTd);
+
+        const distanceTd = document.createElement("td");
+        distanceTd.textContent = row.distance_km == null
+          ? "—"
+          : `${formatNumber(row.distance_km)} km`;
+        tr.appendChild(distanceTd);
+
+        for (const cabinKey of ["economy", "business", "first", "cargo"]) {
+          const td = cabinCell(row, cabinKey);
+          if (!visibleCabins.includes(cabinKey)) td.classList.add("hidden");
+          tr.appendChild(td);
+        }
+
+        const refreshedTd = document.createElement("td");
+        refreshedTd.textContent = formatDateTime(row.last_refreshed_at);
+        refreshedTd.className = "route-refresh";
+        tr.appendChild(refreshedTd);
+
+        if (optimiserTab === "amendable") {
+          tr.addEventListener("click", () => {
+            expandedRouteId =
+              expandedRouteId === row.route_id ? null : row.route_id;
+            renderOptimiserRows();
+          });
+        }
+
+        optimiserRows.appendChild(tr);
+
+        if (
+          optimiserTab === "amendable" &&
+          expandedRouteId === row.route_id
+        ) {
+          const detail = detailRow(row);
+          detail.querySelector("td").colSpan = 3 + visibleCabins.length;
+          optimiserRows.appendChild(detail);
+        }
+      }
+    }
+
+    async function loadOptimiser() {
+      optimiserButton.disabled = true;
+      optimiserButton.textContent = "Loading…";
+
+      try {
+        await refreshAffiliatedOrigins();
+        const scanHubs = latestStatus?.scan?.hubs || latestStatus?.hubs || latestStatus?.scan?.hub_code || latestStatus?.scan?.hubCode || latestStatus?.scan?.hub;
+        const scanCodes = (Array.isArray(scanHubs) ? scanHubs : [scanHubs]).map(h => String(typeof h === "object" && h !== null ? (h.hub_code || h.hubCode || h.hub || "") : (h || "")).trim().toUpperCase()).filter(Boolean);
+        if (!scanCodes.length || scanCodes.some(code => affiliatedOrigins.has(code))) throw new Error("Affiliated hub or unverified scan origin: optimisation blocked.");
+        const result = await callFunction({
+          action: "results",
+          scanId: currentScanId
+        });
+
+        await refreshAffiliatedOrigins();
+        optimiserData = result;
+        selectedRouteIds.clear();
+        if (result.scan?.id) setCurrentScanId(result.scan.id);
+        lastFullRefresh.textContent =
+          `Last full refresh: ${formatDateTime(result.scan?.completedAt)}`;
+        optimiserTab = "amendable";
+        expandedRouteId = null;
+        
+buildHubFilter();
+
+renderOptimiserSummary();
+
+updateOptimiserTabCounts();
+
+renderOptimiserRows();
+
+updateBatchControls();
+        
+        scanCard.classList.add("hidden");
+        optimiserView.classList.remove("hidden");
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      } catch (error) {
+        affiliationVerified = false;
+        selectedRouteIds.clear();
+        const affiliationBlocked = /affiliated hub|affiliated origin/i.test(String(error.message));
+        if (affiliationBlocked) {
+          statusPill.className = "status-pill failed";
+          statusText.textContent = "Affiliated hub — blocked";
+        }
+        setActivity(error.message, "error");
+        optimiserButton.dataset.affiliationBlocked = affiliationBlocked ? "true" : "false";
+      } finally {
+        optimiserButton.textContent = "View Optimiser";
+        optimiserButton.disabled = !latestStatus?.complete || optimiserButton.dataset.affiliationBlocked === "true";
+      }
+    }
+
+    function showTab(tab) {
+      optimiserTab = tab;
+      expandedRouteId = null;
+      amendableTab.classList.toggle("active", tab === "amendable");
+      lockedTab.classList.toggle("active", tab === "locked");
+      renderOptimiserRows();
+    }
+
+    routeSearch.addEventListener("input", renderOptimiserRows);
+    cabinFilter.addEventListener("change", renderOptimiserRows);
+    changeFilter.addEventListener("change", renderOptimiserRows);
+    sortFilter.addEventListener("change", renderOptimiserRows);
+    amendableTab.addEventListener("click", () => showTab("amendable"));
+    lockedTab.addEventListener("click", () => showTab("locked"));
+
+
+hubFilter.addEventListener(
+  "change",
+  () => {
+
+    expandedRouteId = null;
+
+    selectedRouteIds.clear();
+
+    renderOptimiserSummary();
+
+    updateOptimiserTabCounts();
+
+    renderOptimiserRows();
+
+    updateBatchControls();
+  }
+);
+
+    selectAllButton.addEventListener("click",selectAllAvailableRoutes);    
+    applySelectedButton.addEventListener("click", startSelectedBatch);
+    clearSelectedButton.addEventListener("click", () => {
+      if (activeBatch) return;
+      selectedRouteIds.clear();
+      updateBatchControls();
+      renderOptimiserRows();
+    });
+
+    fullRefreshButton.addEventListener("click", startFullRefresh);
+
+    backToScanButton.addEventListener("click", () => {
+      optimiserView.classList.add("hidden");
+      scanCard.classList.remove("hidden");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+
+
+
+    async function loadLatestCompletedScan() {
+      const result = await callFunction({ action: "latest", hub: PRICE_TEST_HUB });
+
+      if (!result.hasCompletedScan || !result.scan?.id) {
+        setCurrentScanId(null);
+        latestStatus = null;
+        optimiserButton.disabled = true;
+        setActivity("No completed scan is available yet.");
+        return null;
+      }
+
+      // The Edge Function must honour the hub filter and identify the scan's hub.
+      // Do not silently select the latest scan belonging to another hub.
+      const rawHubs = result.scan.hubs ?? result.scan.hub_code ?? result.scan.hubCode ?? result.scan.hub;
+      const codes = (Array.isArray(rawHubs) ? rawHubs : [rawHubs])
+        .map(h => String(typeof h === "object" && h !== null
+          ? (h.hub_code ?? h.hubCode ?? h.hub ?? "") : (h ?? "")).trim().toUpperCase())
+        .filter(Boolean);
+      if (codes.length !== 1 || codes[0] !== PRICE_TEST_HUB) {
+        setCurrentScanId(null);
+        optimiserButton.disabled = true;
+        continueButton.disabled = true;
+        throw new Error(`Expected a verified ${PRICE_TEST_HUB} scan, but the server returned ${codes.join(", ") || "no hub identity"}. The Edge Function's latest action must support hub filtering. No pricing actions were started.`);
+      }
+      setCurrentScanId(result.scan.id);
+      selectedScanVerified = true;
+      lastFullRefresh.textContent =
+        `Last full refresh: ${formatDateTime(result.scan.completedAt)}`;
+      return result.scan;
+    }
+
+
+    async function startFullRefresh() {
+      if (running) return;
+      // Starting a new scan is disabled until the backend accepts an explicit hub.
+      setActivity("CGK full refresh requires a hub-scoped start action in the Edge Function. No scan has been started.", "error");
+      return;
+
+      const confirmed = window.confirm(
+        "Start a full refresh of all Audit and Pricing pages? Existing scans will be kept as history."
+      );
+      if (!confirmed) return;
+
+      fullRefreshButton.disabled = true;
+      optimiserButton.disabled = true;
+      optimiserView.classList.add("hidden");
+      scanCard.classList.remove("hidden");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+
+      try {
+        setActivity(`<span class="spinner"></span>Creating a new full refresh…`);
+
+        const started = await callFunction({ action: "start" });
+        const newScanId = started?.scan?.id;
+
+        if (!newScanId) {
+          throw new Error("The Edge Function did not return a new scan ID.");
+        }
+
+        setCurrentScanId(newScanId);
+        latestStatus = null;
+        timerStartedAt = null;
+        elapsed.textContent = "00:00";
+
+        await loadStatus();
+        await runScan();
+
+        if (latestStatus?.complete) {
+          await loadOptimiser();
+        }
+      } catch (error) {
+        setStatusPill("failed");
+        setActivity(error.message, "error");
+      } finally {
+        fullRefreshButton.disabled = running;
+      }
+    }
+
+
+    /* =========================================================
+       EVENTS
+    ========================================================= */
+
+    continueButton.addEventListener(
+      "click",
+      runScan
+    );
+
+
+    pauseButton.addEventListener(
+      "click",
+      pauseScan
+    );
+
+
+    refreshButton.addEventListener(
+      "click",
+      async () => {
+
+        try {
+          await loadStatus();
+        } catch {
+          // Error already displayed.
+        }
+      }
+    );
+
+
+    optimiserButton.addEventListener(
+      "click",
+      openOptimiser
+    );
+
+
+    /* =========================================================
+       INITIALISE
+    ========================================================= */
+
+    async function initialise() {
+
+      if (
+        !configurationIsValid()
+      ) {
+
+        configWarning.classList.remove(
+          "hidden"
+        );
+
+        setStatusPill(
+          "failed"
+        );
+
+        setActivity(
+          "Add the Supabase configuration values, then reload this page.",
+          "error"
+        );
+
+        continueButton.disabled =
+          true;
+
+        refreshButton.disabled =
+          true;
+
+        return;
+      }
+
+
+      try {
+        if (!window.parent?.amSharedAuth?.token) {
+          throw new Error("Open Price Optimiser through the main Airlines Manager application (#price), not as a standalone HTML page.");
+        }
+        await window.parent.amSharedAuth.token();
+        const latestScan = await loadLatestCompletedScan();
+        if (latestScan) {
+          await loadStatus();
+        }
+      } catch (error) {
+        setStatusPill("failed");
+        setActivity(error.message, "error");
+      }
+    }
+
+
+    initialise();
+  </script>
+
+</body>
+
+</html>
