@@ -1,12 +1,13 @@
-<!doctype html>
+<!DOCTYPE html>
+
 <html lang="en">
- <head>
-  <meta charset="utf-8"/>
-  <meta content="width=device-width,initial-scale=1" name="viewport"/>
-  <title>
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width,initial-scale=1" name="viewport"/>
+<title>
    Route Importer
   </title>
-  <style>
+<style>
    :root {
     color-scheme:dark;
     --bg:#0b0d10;
@@ -112,342 +113,338 @@ html body textarea::placeholder {
   -webkit-text-fill-color: #ffffff !important;
   opacity: 1 !important;
 }
+
+/* Workflow grouping: clear primary scan sequence and optional legacy tools */
+#game-data-scan { border-color:#34424a; }
+#game-data-scan > div:has(> button) { margin-bottom:18px; }
+#manual-csv-tools { padding:18px 24px; }
+#manual-csv-tools details > summary, .technical-notes > summary { cursor:pointer; font-weight:700; color:#e6edf4; padding:8px 0; }
+#manual-csv-tools details[open] > summary { margin-bottom:16px; }
+#manual-csv-tools .panel { box-shadow:none; padding:18px; margin:18px 0; }
+#manual-csv-tools .grid { margin:12px 0; }
+#manual-csv-tools button:disabled, button:disabled { color:#b4bdc8 !important; -webkit-text-fill-color:#b4bdc8 !important; opacity:.52; }
+#scan-status, #scan-resume, #scan-pause, #pub-refresh { color:#f4f7fa !important; -webkit-text-fill-color:#f4f7fa !important; }
+#manual-csv-tools input[type=file] { max-width:100%; }
+#manual-csv-tools .warn { margin-top:14px; }
+.technical-notes { margin-top:14px; border-top:1px solid #303741; padding-top:8px; }
+#manual-csv-tools > details > summary { font-size:17px; }
 </style>
- </head>
- <body>
-  <h1>
+</head>
+<body>
+<h1>
    Route Importer
   </h1>
-  <p>
+<p>
    Prepare purchased routes for the Rotation Optimiser. The game is on a separate authenticated domain; this tab cannot directly access its pages. Use the existing game-side extractor or your authenticated Supabase scanner, then validate and merge the resulting CSV here.
   </p>
-  <section class="panel">
-   <h2>
-    1. Automated Supabase scan
-   </h2>
-   <p>
-    Connect to your existing authenticated Edge Function. v0.3 scans only the hub selected below. Use the shared session in the main Airlines Manager header to authorise the scanner; your publishable key is not a login token. No Airlines Manager credentials are stored in this page.
-   </p>
-   <div class="grid">
-    <div>
-     <label for="endpoint">
+<section class="panel">
+<h2>1. Connection &amp; authentication</h2>
+<p>The scanner uses your shared Airlines Manager session and the authenticated Supabase Edge Function. These settings are normally only needed when connecting or resuming a scan.</p>
+<div class="grid">
+<div>
+<label for="endpoint">
       Edge Function endpoint (HTTPS)
      </label>
-     <input autocomplete="off" id="endpoint" placeholder="https://PROJECT.supabase.co/functions/v1/FUNCTION" type="url"/>
-    </div>
-    <div>
-     <label for="api-key">
+<input autocomplete="off" id="endpoint" placeholder="https://PROJECT.supabase.co/functions/v1/FUNCTION" type="url"/>
+</div>
+<div>
+<label for="api-key">
       Supabase publishable / anon key (never service-role)
      </label>
-     <input autocomplete="off" id="api-key" placeholder="Publishable key" type="password"/>
-    </div>
-    <div hidden="">
-     <label for="auth-email">
+<input autocomplete="off" id="api-key" placeholder="Publishable key" type="password"/>
+</div>
+<div hidden="">
+<label for="auth-email">
       Supabase Auth email
      </label>
-     <input autocomplete="username" id="auth-email" placeholder="Email for Authentication → Users" type="email" value="chris@dunigan.email"/>
-    </div>
-    <div hidden="">
-     <label for="auth-password">
+<input autocomplete="username" id="auth-email" placeholder="Email for Authentication → Users" type="email" value="chris@dunigan.email"/>
+</div>
+<div hidden="">
+<label for="auth-password">
       Supabase Auth password
      </label>
-     <input autocomplete="current-password" id="auth-password" placeholder="Supabase Auth password (not Dashboard password)" type="password"/>
-    </div>
-    <div>
-     <label>
+<input autocomplete="current-password" id="auth-password" placeholder="Supabase Auth password (not Dashboard password)" type="password"/>
+</div>
+<div>
+<label>
       Session
      </label>
-     <div class="metric" id="auth-status" role="status">
+<div class="metric" id="auth-status" role="status">
       Not signed in
      </div>
-     <button class="secondary" hidden="" id="auth-login">
+<button class="secondary" hidden="" id="auth-login">
       Sign in
      </button>
-     <button class="secondary" disabled="" hidden="" id="auth-logout">
+<button class="secondary" disabled="" hidden="" id="auth-logout">
       Sign out
      </button>
-    </div>
-    <div>
-     <label for="scan-id">
+</div>
+<div>
+<label for="scan-id">
       Scan ID (resume existing scan)
      </label>
-     <input autocomplete="off" id="scan-id" placeholder="Populated by Start scan" type="text"/>
-    </div>
-   </div>
-   <div>
-    <button id="scan-start">
+<input autocomplete="off" id="scan-id" placeholder="Populated by Start scan" type="text"/>
+</div>
+</div>
+
+
+
+
+<details class="technical-notes"><summary>Security and connection details</summary><p class="warn">
+    The server requires a valid Supabase user session whose email is explicitly allowlisted (AM_ALLOWED_EMAILS). The shared session is managed by the main website and cleared on sign-out. Do not use your Supabase Dashboard password unless it is also the Auth user password. The server scans and upserts into Supabase using its own configuration. The browser does not directly write to Supabase tables. Use only a function secured for your account; the existing function must be reviewed for authorization before exposing it publicly.
+   </p></details></section>
+<section class="panel"><h2>2. Select hub</h2><p>Choose the hub to scan. Affiliated hubs remain subject to the existing eligibility checks.</p><div>
+<label for="hub">
+      Hub
+     </label>
+<select id="hub">
+<option>
+       CGK
+      </option>
+<option>
+       BOM
+      </option>
+<option>
+       MPM
+      </option>
+<option>
+       BKK
+      </option>
+<option>
+       DEL
+      </option>
+</select>
+</div></section><section class="panel" id="game-data-scan"><h2>3. Scan game data</h2><p>Collect route audit and pricing information for the selected hub, then load the completed results.</p><div>
+<button id="scan-start">
      Start scan (selected hub)
     </button>
-    <button class="secondary" id="scan-resume">
+<button class="secondary" id="scan-resume">
      Resume existing
     </button>
-    <button class="secondary" disabled="" id="scan-pause">
+<button class="secondary" disabled="" id="scan-pause">
      Pause
     </button>
-    <button class="secondary" id="scan-status">
+<button class="secondary" id="scan-status">
      Refresh status
     </button>
-    <button class="secondary" disabled="" id="scan-results">
+<button class="secondary" disabled="" id="scan-results">
      Load completed results
     </button>
-    <button disabled="" id="scan-export">
+<button disabled="" id="scan-export">
      Download scanned owned routes CSV
     </button>
-   </div>
-   <div class="grid">
-    <div class="metric">
+</div><div class="grid">
+<div class="metric">
      Audit pages
      <strong class="num" id="audit-progress">
       —
      </strong>
-    </div>
-    <div class="metric">
+</div>
+<div class="metric">
      Pricing pages
      <strong class="num" id="pricing-progress">
       —
      </strong>
-    </div>
-    <div class="metric">
+</div>
+<div class="metric">
      Hubs complete
      <strong class="num" id="hub-progress">
       —
      </strong>
-    </div>
-    <div class="metric">
+</div>
+<div class="metric">
      Collected routes
      <strong class="num" id="route-progress">
       —
      </strong>
-    </div>
-   </div>
-   <pre id="scan-log">Use the main Airlines Manager header to sign in, then select a hub.</pre>
-   <p class="warn">
-    The server requires a valid Supabase user session whose email is explicitly allowlisted (AM_ALLOWED_EMAILS). The shared session is managed by the main website and cleared on sign-out. Do not use your Supabase Dashboard password unless it is also the Auth user password. The server scans and upserts into Supabase using its own configuration. The browser does not directly write to Supabase tables. Use only a function secured for your account; the existing function must be reviewed for authorization before exposing it publicly.
-   </p>
-  </section>
-  <section class="panel">
-   <h2>
-    2. Select hub and input files
-   </h2>
-   <div class="grid">
-    <div>
-     <label for="hub">
-      Hub
-     </label>
-     <select id="hub">
-      <option>
-       CGK
-      </option>
-      <option>
-       BOM
-      </option>
-      <option>
-       MPM
-      </option>
-      <option>
-       BKK
-      </option>
-      <option>
-       DEL
-      </option>
-     </select>
-    </div>
-    <div>
-     <label for="base">
+</div>
+</div><pre id="scan-log">Use the main Airlines Manager header to sign in, then select a hub.</pre></section><section class="panel" id="manual-csv-tools"><details class="advanced-tools"><summary>Manual CSV import (advanced — optional)</summary><p>Only use this if you need to merge a game-side owned-routes export with an existing routes.csv. The automated Supabase scan does not require these files.</p><div class="grid"><div>
+<label for="base">
       Existing routes.csv (preserved)
      </label>
-     <input accept=".csv,text/csv" id="base" type="file"/>
-    </div>
-    <div>
-     <label for="owned">
+<input accept=".csv,text/csv" id="base" type="file"/>
+</div><div>
+<label for="owned">
       Owned-routes scan CSV
      </label>
-     <input accept=".csv,text/csv" id="owned" type="file"/>
-    </div>
-   </div>
-   <button id="validate">
+<input accept=".csv,text/csv" id="owned" type="file"/>
+</div></div><button id="validate">
     Validate and merge
-   </button>
-   <button disabled="" id="download">
+   </button><button disabled="" id="download">
     Download merged routes.csv
-   </button>
-  </section>
-  <section class="panel">
-   <h2>
-    3. Validation
-   </h2>
-   <div class="grid">
-    <div class="metric">
+   </button><section class="panel">
+<h2>CSV merge validation</h2>
+<div class="grid">
+<div class="metric">
      Existing rows
      <strong class="num" id="existing">
       —
      </strong>
-    </div>
-    <div class="metric">
+</div>
+<div class="metric">
      Imported owned routes
      <strong class="num" id="imported">
       —
      </strong>
-    </div>
-    <div class="metric">
+</div>
+<div class="metric">
      Merged rows
      <strong class="num" id="merged">
       —
      </strong>
-    </div>
-    <div class="metric">
+</div>
+<div class="metric">
      Missing categories
      <strong class="num" id="missing">
       —
      </strong>
-    </div>
-   </div>
-   <pre id="report">Upload the two CSV files and click Validate and merge.</pre>
-   <p class="warn">
+</div>
+</div>
+<pre id="report">Upload the two CSV files and click Validate and merge.</pre>
+<p class="warn">
     Missing airport categories, airport metadata and total pricing demand are never fabricated. An owned-route scan alone may not produce optimiser-ready records.
    </p>
-  </section>
-  <section class="panel">
-   <h2>
-    4. Complete the data
-   </h2>
-   <p>
+</section><section class="panel">
+<h2>Additional data requirements</h2>
+<p>
     The optimiser requires a matching
     <code>
      pricing.csv
     </code>
     or Supabase pricing dataset for the hub. Use your existing authenticated Edge Function to collect route audit and pricing data; the importer invokes the Edge Function to scan the selected hub, but does not fabricate missing metadata.
    </p>
-   <p>
+<p>
     For the game-side scan, open
     <a href="https://tycoon.airlines-manager.com/network/" rel="noopener" target="_blank">
      Airlines Manager Network ↗
     </a>
     , choose the required hub, and run your owned-route exporter. Then upload its CSV above.
    </p>
-  </section>
-  <script src="route-importer.js">
-  </script>
-  <script src="route-auth.js">
-  </script>
-  <script src="affiliation-guard.js">
-  </script>
-  <script src="route-scanner.js">
-  </script>
-  <section class="panel" id="publication-report-panel">
-   <h2>
+</section></details></section>
+
+
+<script src="route-importer.js">
+</script>
+<script src="route-auth.js">
+</script>
+<script src="affiliation-guard.js">
+</script>
+<script src="route-scanner.js">
+</script>
+<section class="panel" id="publication-report-panel">
+<h2>
     Publication report
    </h2>
-   <p>
+<p>
     After loading a completed scan, this report checks the selected hub against the production Supabase tables. Counts describe the current database, not necessarily changes made by the latest scan.
    </p>
-   <div class="grid">
-    <div class="metric">
+<div class="grid">
+<div class="metric">
      Owned routes
      <strong class="num" id="pub-routes">
       —
      </strong>
-    </div>
-    <div class="metric">
+</div>
+<div class="metric">
      Pricing records
      <strong class="num" id="pub-pricing">
       —
      </strong>
-    </div>
-    <div class="metric">
+</div>
+<div class="metric">
      Valid airport categories
      <strong class="num" id="pub-categories">
       —
      </strong>
-    </div>
-    <div class="metric">
+</div>
+<div class="metric">
      Unresolved categories
      <strong class="num" id="pub-unresolved">
       —
      </strong>
-    </div>
-    <div class="metric">
+</div>
+<div class="metric">
      Eligible priced routes
      <strong class="num" id="pub-eligible">
       —
      </strong>
-    </div>
-    <div class="metric">
+</div>
+<div class="metric">
      Pricing errors
      <strong class="num" id="pub-errors">
       —
      </strong>
-    </div>
-   </div>
-   <p id="pub-readiness" role="status">
+</div>
+</div>
+<p id="pub-readiness" role="status">
     No publication report loaded.
    </p>
-   <p class="warn" id="pub-note">
+<p class="warn" id="pub-note">
     Newly recovered category counts are not yet tracked historically; the report shows current category coverage.
    </p>
-   <button class="secondary" id="pub-refresh">
+<button class="secondary" id="pub-refresh">
     Refresh publication report
    </button>
-  </section>
-  <section class="panel" id="affiliations-panel">
-   <h2>
+</section>
+<section class="panel" id="affiliations-panel">
+<h2>
     Affiliated Hub Manager
    </h2>
-   <p>
+<p>
     Manage affiliated hubs in Supabase. Affiliated hubs are blocked as origins for scanning, importing and optimisation, and are excluded as destinations. Changes never delete routes, pricing or X380Plus allocations.
    </p>
-   <div class="grid">
-    <div>
-     <label for="aff-endpoint">
+<div class="grid">
+<div>
+<label for="aff-endpoint">
       Scanner Edge Function URL
      </label>
-     <input autocomplete="off" id="aff-endpoint" placeholder="https://PROJECT.supabase.co/functions/v1/FUNCTION" type="url"/>
-    </div>
-    <div hidden="">
-     <label for="aff-email">
+<input autocomplete="off" id="aff-endpoint" placeholder="https://PROJECT.supabase.co/functions/v1/FUNCTION" type="url"/>
+</div>
+<div hidden="">
+<label for="aff-email">
       Supabase Auth email
      </label>
-     <input autocomplete="username" id="aff-email" placeholder="Authentication user email" type="email"/>
-    </div>
-    <div hidden="">
-     <label for="aff-password">
+<input autocomplete="username" id="aff-email" placeholder="Authentication user email" type="email"/>
+</div>
+<div hidden="">
+<label for="aff-password">
       Supabase Auth password
      </label>
-     <input autocomplete="current-password" id="aff-password" placeholder="Password (not saved)" type="password"/>
-    </div>
-   </div>
-   <button id="aff-signin">
+<input autocomplete="current-password" id="aff-password" placeholder="Password (not saved)" type="password"/>
+</div>
+</div>
+<button id="aff-signin">
     Sign in
    </button>
-   <button class="secondary" disabled="" id="aff-signout">
+<button class="secondary" disabled="" id="aff-signout">
     Sign out
    </button>
-   <button class="secondary" disabled="" id="aff-refresh">
+<button class="secondary" disabled="" id="aff-refresh">
     Refresh
    </button>
-   <p id="aff-message" role="status">
+<p id="aff-message" role="status">
     Sign in to manage affiliations. This session is kept in memory only.
    </p>
-   <div aria-live="polite" id="aff-list">
-   </div>
-   <div class="grid">
-    <div>
-     <label for="aff-new">
+<div aria-live="polite" id="aff-list">
+</div>
+<div class="grid">
+<div>
+<label for="aff-new">
       Add affiliated hub (3–5 letters or digits)
      </label>
-     <input autocomplete="off" id="aff-new" maxlength="5" placeholder="e.g. SYD" type="text"/>
-    </div>
-   </div>
-   <button disabled="" id="aff-add">
+<input autocomplete="off" id="aff-new" maxlength="5" placeholder="e.g. SYD" type="text"/>
+</div>
+</div>
+<button disabled="" id="aff-add">
     Add affiliation
    </button>
-   <p class="warn">
+<p class="warn">
     Removing affiliation changes origin restrictions and destination exclusions. It does not release aircraft or delete data. Refresh the Rotation Optimiser after changes.
    </p>
-  </section>
-  <script src="affiliated-hubs.js">
-  </script>
-  <script src="publication-report.js">
-  </script>
- </body>
+</section>
+<script src="affiliated-hubs.js">
+</script>
+<script src="publication-report.js">
+</script>
+</body>
 </html>
