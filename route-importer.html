@@ -38,30 +38,31 @@ label {
     display:block;
     margin:14px 0 7px;
     color:var(--muted)}
-select,input,button {
-    font:inherit}
-select,input[type=file],input[type=url],input[type=password],input[type=text],input[type=email] {
-    background:#11151a;
-    border:1px solid var(--border);
-    color:white;
-    padding:12px;
-    border-radius:8px;
-    width:100%}
-button {
-    color:#000;
-    background:var(--accent);
-    border:0;
-    border-radius:9px;
-    padding:12px 18px;
-    font-weight:750;
-    cursor:pointer;
-    margin:8px 8px 0 0}
-button:disabled {
-    opacity:.65;
-    cursor:not-allowed}
-.secondary {
-    background:#303741;
-    color:#fff}
+select,input,/* Unified lime button style, including secondary and disabled buttons. */
+button,
+button.secondary,
+button:disabled,
+button.secondary:disabled {
+    background: #ccff00;
+    color: #000000 !important;
+    -webkit-text-fill-color: #000000;
+    border: 0;
+    border-radius: 14px;
+    padding: 14px 22px;
+    font-weight: 800;
+    cursor: pointer;
+    margin: 8px 8px 0 0;
+    opacity: 1;
+}
+button:hover:not(:disabled) {
+    background: #ddff44;
+}
+button:disabled,
+button.secondary:disabled {
+    cursor: not-allowed;
+    outline: 2px dashed #789900;
+    outline-offset: -4px;
+}
 p,small {
     color:var(--muted);
     line-height:1.6}
