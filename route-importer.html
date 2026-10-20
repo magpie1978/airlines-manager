@@ -131,16 +131,15 @@ html body textarea::placeholder {
 </style>
 </head>
 <body>
-<h1>
-   Route Importer
-  </h1>
+<h1>Import Game Data</h1>
 <p>
-   Prepare purchased routes for the Rotation Optimiser. The game is on a separate authenticated domain; this tab cannot directly access its pages. Use the existing game-side extractor or your authenticated Supabase scanner, then validate and merge the resulting CSV here.
+   Scan your owned routes, pricing and demand data into Supabase. Use the manual CSV tools only when needed.
   </p>
-<section class="panel">
+<section class="panel" id="connection-panel">
 <h2>1. Connection &amp; authentication</h2>
 <p>The scanner uses your shared Airlines Manager session and the authenticated Supabase Edge Function. These settings are normally only needed when connecting or resuming a scan.</p>
-<div class="grid">
+<div class="connection-summary" role="status" id="connection-summary">Checking shared Airlines Manager connection…</div>
+<details class="connection-advanced"><summary>Advanced connection settings</summary><div class="grid">
 <div>
 <label for="endpoint">
       Edge Function endpoint (HTTPS)
@@ -183,9 +182,9 @@ html body textarea::placeholder {
 <label for="scan-id">
       Scan ID (resume existing scan)
      </label>
-<input autocomplete="off" id="scan-id" placeholder="Populated by Start scan" type="text"/>
+<input autocomplete="off" id="scan-id" placeholder="Latest completed scan is loaded automatically" type="text"/>
 </div>
-</div>
+</div></details>
 
 
 
@@ -445,6 +444,57 @@ html body textarea::placeholder {
 <script src="affiliated-hubs.js">
 </script>
 <script src="publication-report.js">
+</script>
+<style>
+.connection-summary{padding:15px 18px;background:#0d1319;border:1px solid #35404e;border-radius:11px;color:#e8edf4;font-weight:650;line-height:1.6}
+.connection-summary.good{border-color:#496a2c}
+.connection-summary.warn{border-color:#7a6234}
+.connection-advanced{margin-top:14px}
+.connection-advanced summary{cursor:pointer;color:#b8c3cf;font-weight:700;padding:8px 0}
+.connection-advanced .grid{margin-top:12px}
+.connection-advanced input{width:100%;min-width:0}
+</style>
+<script>
+/* Public configuration only. User access tokens always come from shared authentication. */
+(()=>{'use strict';
+ const endpoint='https://eukgodthgusongsbhdwg.supabase.co/functions/v1/am-auth-test', publishableKey='sb_publishable_pBMWDgyFgIUGetg6NwkKkA_rMa1--kc';
+ const $=id=>document.getElementById(id);
+ $('endpoint').value=endpoint;
+ $('api-key').value=publishableKey;
+ const summary=$('connection-summary');
+ let sequence=0;
+ const isShared=()=>window.parent!==window && Boolean(window.parent.amSharedAuth);
+ const signedIn=()=>isShared() && window.parent.amSharedAuth.isSignedIn();
+ function render(message,kind=''){
+   summary.className='connection-summary '+kind;
+   summary.textContent=message;
+ }
+ async function loadLatest({force=false}={}){
+   const current=++sequence;
+   if(!signedIn()){render('Connection configured · Sign in through the main Airlines Manager header to access scans.','warn');return;}
+   render('Supabase configured · Authenticated through Airlines Manager · Looking up latest completed scan…');
+   if($('scan-id').value.trim()&&!force){render('Supabase configured · Authenticated · Existing scan ID retained.','good');return;}
+   try{
+     const token=await window.parent.amSharedAuth.token();
+     const u=new URL(endpoint);u.searchParams.set('action','latest');u.searchParams.set('hub',$('hub').value);
+     const r=await fetch(u,{headers:{apikey:publishableKey,Authorization:'Bearer '+token},cache:'no-store'});
+     const d=await r.json().catch(()=>({}));
+     if(!r.ok||d.ok===false)throw Error(d.error||d.message||'HTTP '+r.status);
+     if(current!==sequence)return;
+     if(d.hasCompletedScan&&d.scan?.id){
+       $('scan-id').value=d.scan.id;
+       render('Connected · Authenticated · Latest completed '+$('hub').value+' scan found. Click Refresh status to view it.','good');
+     }else{
+       render('Connected · Authenticated · No completed scan found for '+$('hub').value+'.','warn');
+     }
+   }catch(e){if(current===sequence)render('Connected · Could not retrieve latest scan: '+e.message,'warn');}
+ }
+ $('hub').addEventListener('change',()=>{$('scan-id').value='';loadLatest({force:true});});
+ window.addEventListener('route-importer-auth-changed',()=>loadLatest());
+ window.addEventListener('pageshow',()=>loadLatest());
+ // The main page owns login state; a new scan keeps its own ID until hub changes.
+ loadLatest();
+})();
 </script>
 </body>
 </html>
