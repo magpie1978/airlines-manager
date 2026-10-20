@@ -20,8 +20,9 @@ async function authCall(path,body){
  return data;
 }
 function status(){
- const valid=Boolean(session?.access_token);
- $('auth-status').textContent=valid?`Signed in as ${session.user?.email||'Supabase Auth user'}`:'Not signed in';
+ const shared=window.parent!==window && window.parent.amSharedAuth;
+ const valid=shared ? shared.isSignedIn() : Boolean(session?.access_token);
+ $('auth-status').textContent=valid?(shared?'Authenticated through Airlines Manager':'Signed in as '+(session.user?.email||'Supabase Auth user')):'Not signed in';
  $('auth-logout').disabled=!valid;
  $('auth-login').disabled=valid;
 }
@@ -60,6 +61,7 @@ $('auth-logout').addEventListener('click',()=>{
  window.dispatchEvent(new CustomEvent('route-importer-auth-changed',{detail:{signedIn:false}}));
  // No persistent session; token is not retained after logout.
 });
+window.addEventListener('pageshow',status);
 window.routeImporterAuth={token, isSignedIn:()=>Boolean(session?.access_token)||(window.parent!==window && Boolean(window.parent.amSharedAuth?.isSignedIn()))};
 window.dispatchEvent(new CustomEvent('route-importer-auth-changed',{detail:{signedIn:Boolean(session?.access_token)}}));
 status();

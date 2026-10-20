@@ -287,13 +287,9 @@
 
     <section class="panel">
       <h2>Production Supabase connection</h2>
-      <p class="hint">Sign in using your Supabase Authentication user. The scanner Edge Function must be updated to support the read-only optimizer-data action. Your access token is held in memory only.</p>
-      <div class="inputs">
-        <label>Scanner Edge Function URL<input id="db-endpoint" type="url" placeholder="https://PROJECT.supabase.co/functions/v1/FUNCTION" autocomplete="off"></label>
-        <label>Supabase Auth email<input id="db-email" type="email" value="chris@dunigan.email" autocomplete="username"></label>
-        <label>Supabase Auth password<input id="db-password" type="password" autocomplete="current-password"></label>
-      </div>
-      <div class="actions"><button id="db-sign-in">Sign in and load Supabase</button><button id="db-sign-out" class="secondary">Sign out</button><span id="db-auth-status" class="hint">Not signed in</span></div>
+      <p class="hint">Authentication is managed by the Airlines Manager header. Production data loads automatically when signed in.</p>
+      <div hidden><input id="db-endpoint" type="url"><input id="db-email" type="email"><input id="db-password" type="password"><button id="db-sign-in">Load</button><button id="db-sign-out">Sign out</button></div>
+      <div id="db-auth-status" class="hint" role="status">Waiting for shared sign-in</div>
     </section>
 
     <section class="panel">

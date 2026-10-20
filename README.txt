@@ -1,9 +1,11 @@
-Shared sign-in v5 — staged website integration
+Airlines Manager shared sign-in cleanup v6
 
-Deploy index.html, am-shared-auth.js, airlines_manager.html, rotation.html, js/app.js, route-importer.html, js/route-auth.js and the remaining Route Importer JS files at the paths your existing site uses.
+Deploy all files at their existing paths, preserving other website assets.
 
-IMPORTANT: This implementation assumes all iframe pages share the same origin. It reuses the existing Supabase project. Auth is persisted in same-origin localStorage to support page refresh, unlike the previous in-memory-only sessions. Do not deploy on a public/shared browser if persistent sign-in is unwanted.
+Changes: header hides credential inputs when signed in; Route Importer and affiliated manager duplicate login controls hidden; Rotation Optimiser removes duplicate sign-in UI and loads through shared session; Price Optimiser continues using shared authentication.
 
-Do not remove server-side authentication/affiliation checks. Price Optimiser Edge Function still needs its own server-side affiliated-origin enforcement.
+The Price Optimiser still displays a completed scan as Complete until its selected scan hub can be verified; backend rejection prevents BKK optimisation. Do not interpret a completed scan as pricing-ready.
 
-The rotation file is based on the latest previously supplied v3 patch; inspect differences against current deployment before replacing. Test on a staging branch first.
+Test: sign in once, switch tabs, verify Rotation Optimiser data loads, Route Importer session works, BKK remains blocked, and sign-out disables actions.
+
+Important: same-origin iframe access is required. Deploy all files under the same domain and protocol. Do not use this package to change database RLS or Edge Function permissions.

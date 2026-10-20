@@ -1457,7 +1457,14 @@
 
       latestStatus =
         result;
+      optimiserButton.dataset.affiliationBlocked = "false";
 
+      // A finished scan is not necessarily eligible for optimisation.
+      const scanHubs = result?.scan?.hubs || result?.hubs || result?.scan?.hub_code || result?.scan?.hubCode || result?.scan?.hub;
+      const scanCodes = (Array.isArray(scanHubs) ? scanHubs : [scanHubs])
+        .map(h => String(typeof h === 'object' && h !== null ? (h.hub_code || h.hubCode || h.hub || '') : (h || '')).toUpperCase())
+        .filter(Boolean);
+      const blockedScan = scanCodes.some(code => affiliatedOrigins.has(code));
 
       const audit =
         result.progress.audit;
@@ -4290,10 +4297,16 @@ updateBatchControls();
       } catch (error) {
         affiliationVerified = false;
         selectedRouteIds.clear();
+        const affiliationBlocked = /affiliated hub|affiliated origin/i.test(String(error.message));
+        if (affiliationBlocked) {
+          statusPill.className = "status-pill failed";
+          statusText.textContent = "Affiliated hub — blocked";
+        }
         setActivity(error.message, "error");
+        optimiserButton.dataset.affiliationBlocked = affiliationBlocked ? "true" : "false";
       } finally {
         optimiserButton.textContent = "View Optimiser";
-        optimiserButton.disabled = !latestStatus?.complete;
+        optimiserButton.disabled = !latestStatus?.complete || optimiserButton.dataset.affiliationBlocked === "true";
       }
     }
 
