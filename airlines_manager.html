@@ -2170,30 +2170,41 @@ function selectAllAvailableRoutes() {
     let affiliationVerified = false;
 
     async function refreshAffiliatedOrigins() {
+      // Use the same authenticated Edge Function as the Rotation Optimiser.
+      // Never use the publishable key as a user's bearer token.
       affiliationVerified = false;
-      const response = await fetch(
-        `${SUPABASE_URL}/rest/v1/am_affiliated_hubs?select=*`,
-        { headers: {
-          apikey: SUPABASE_PUBLISHABLE_KEY,
-          Authorization: `Bearer ${SUPABASE_PUBLISHABLE_KEY}`
-        }, cache: "no-store" }
-      );
-      if (!response.ok) throw new Error(
-        `Cannot verify affiliated hubs (HTTP ${response.status}). Pricing is blocked until the affiliation register is accessible.`
-      );
-      const records = await response.json();
-      if (!Array.isArray(records)) throw new Error("Invalid affiliation register response.");
-      if (records.length && !records.some(row => "hub_code" in row)) {
-        throw new Error("Affiliation register lacks hub_code; pricing blocked.");
+      affiliatedOrigins = new Set();
+
+      const result = await callFunction({ action: "affiliated-hubs" });
+
+      // Accept the supported list envelopes without silently treating an
+      // unexpected response as an empty affiliation register.
+      const records = Array.isArray(result) ? result
+        : Array.isArray(result?.hubs) ? result.hubs
+        : Array.isArray(result?.affiliatedHubs) ? result.affiliatedHubs
+        : Array.isArray(result?.affiliations) ? result.affiliations
+        : Array.isArray(result?.data) ? result.data
+        : null;
+
+      if (!records) {
+        throw new Error(
+          "The affiliated-hubs Edge Function returned an unrecognised response. Pricing remains blocked."
+        );
       }
+
       const next = new Set();
       for (const row of records) {
-        const code = String(row.hub_code || "").trim().toUpperCase();
-        if (!code) continue;
-        // Support common active-state columns; absent flag means a register entry is affiliated.
+        if (!row || typeof row !== "object" || !("hub_code" in row || "hubCode" in row)) {
+          throw new Error("Affiliation register contains an invalid hub entry. Pricing remains blocked.");
+        }
+        const code = String(row.hub_code ?? row.hubCode ?? "").trim().toUpperCase();
+        if (!/^[A-Z0-9]{3,5}$/.test(code)) {
+          throw new Error("Affiliation register contains an invalid hub code. Pricing remains blocked.");
+        }
         const enabled = row.is_active ?? row.active ?? row.enabled ?? true;
         if (enabled === true || enabled === 1 || enabled === "true") next.add(code);
       }
+
       affiliatedOrigins = next;
       affiliationVerified = true;
       return next;
