@@ -22,6 +22,7 @@ let rawRoutes = [];
 let rawPricing = [];
 let rawAircraft = [];
 let availableHubs = [];
+let affiliatedOrigins = null; // Null means unverified: fail closed.
 let loadGeneration = 0;
 let activeDataSource = "CSV";
 // Fleet allocations are authoritative in Supabase, not browser memory.
@@ -37,6 +38,10 @@ function fleetVersion(f) {
 function allocatedHere() {
   return Number(fleetState?.allocations?.[HUB] || 0);
 }
+function originAllowed(hub = HUB) {
+  return affiliatedOrigins instanceof Set && !affiliatedOrigins.has(normaliseHub(hub));
+}
+
 function freeGroups() {
   if (!fleetState) return 0;
   const used = Object.values(fleetState.allocations).reduce((sum,n)=>sum+Number(n),0);
@@ -54,7 +59,7 @@ function updateX380Controls() {
   }
   const confirm = $("confirm-x380");
   if (confirm) confirm.disabled = isRunning || !fleetState || !optimisationResult || resultHub !== HUB ||
-    x380GroupsInResult() < 1 || resultFleetVersion !== fleetVersion(fleetState);
+    x380GroupsInResult() < 1 || !originAllowed() || resultFleetVersion !== fleetVersion(fleetState);
   const release = $("release-x380");
   if (release) release.disabled = isRunning || !fleetState || allocatedHere() === 0;
 }
@@ -79,8 +84,11 @@ async function refreshFleet() {
   return f;
 }
 async function confirmX380() {
-  if (isRunning || !optimisationResult || resultHub !== HUB || !x380GroupsInResult()) return;
+  if (isRunning || !originAllowed() || !optimisationResult || resultHub !== HUB || !x380GroupsInResult()) return;
   try {
+    const latestAffiliations = await loadAffiliatedHubs();
+    affiliatedOrigins = new Set(latestAffiliations.map(normaliseHub));
+    if (!originAllowed()) throw new Error(`${HUB} is now affiliated`);
     const latest=await refreshFleet();
     if (fleetVersion(latest)!==resultFleetVersion) throw new Error("Fleet allocation changed; rerun optimisation before confirming");
     const groups=x380GroupsInResult();
@@ -124,17 +132,22 @@ function renderHubOptions() {
   for (const hub of availableHubs) {
     const option = document.createElement("option");
     option.value = hub;
-    option.textContent = hub;
+    option.textContent = originAllowed(hub) ? hub : `${hub} — affiliated (disabled)`;
+    option.disabled = !originAllowed(hub);
     select.appendChild(option);
   }
   select.value = HUB;
-  select.disabled = availableHubs.length < 2 || isRunning;
+  select.disabled = availableHubs.filter(originAllowed).length < 2 || isRunning;
 }
 
 function activateHub(hub) {
   if (isRunning) return;
   const selected = normaliseHub(hub);
-  if (!availableHubs.includes(selected)) return;
+  if (!availableHubs.includes(selected) || !originAllowed(selected)) {
+    setStatus(`${selected}: affiliated hub origins cannot be optimised.`);
+    renderHubOptions();
+    return;
+  }
   HUB = selected;
   updateHubHeading();
   optimisationResult = null;
@@ -257,11 +270,11 @@ function updateButtons() {
   const stopButton = $("stop");
   const downloadButton = $("download");
 
-  if ($("hub-select")) $("hub-select").disabled = isRunning || availableHubs.length < 2;
+  if ($("hub-select")) $("hub-select").disabled = isRunning || availableHubs.filter(originAllowed).length < 2;
 
   if (runButton) {
     runButton.disabled =
-      isRunning || preparedData === null || fleetState === null;
+      isRunning || preparedData === null || fleetState === null || !originAllowed();
   }
 
   if (stopButton) {
@@ -274,6 +287,7 @@ function updateButtons() {
     downloadButton.disabled =
       isRunning ||
       !optimisationResult ||
+      !originAllowed() ||
       resultFleetVersion !== fleetVersion(fleetState) ||
       optimisationResult.rotations.length === 0;
   }
@@ -413,6 +427,7 @@ function renderConfigurations(fleet) {
 
 async function loadData() {
   fleetState = null;
+  affiliatedOrigins = null;
   const generation = ++loadGeneration;
   preparedData = null; optimisationResult = null;
   clearResults(); updateButtons();
@@ -423,15 +438,18 @@ async function loadData() {
     if (generation !== loadGeneration) return;
     rawRoutes = dataset.routes; rawPricing = dataset.pricing; rawAircraft = dataset.aircraft;
     activeDataSource = "Supabase";
+    affiliatedOrigins = new Set(affiliatedHubs.map(normaliseHub));
     availableHubs = discoverHubs(rawRoutes,rawPricing);
     if (!availableHubs.length) throw new Error("No hubs with both routes and pricing");
-    HUB = availableHubs.includes(HUB) ? HUB : availableHubs[0];
+    const eligibleOrigins = availableHubs.filter(originAllowed);
+    if (!eligibleOrigins.length) throw new Error("No non-affiliated origin hubs with routes and pricing");
+    HUB = eligibleOrigins.includes(HUB) ? HUB : eligibleOrigins[0];
     activateHub(HUB);
     const status = $("status")?.textContent || "";
     setStatus(`Production Supabase data loaded. Affiliated destinations excluded: ${affiliatedHubs.join(", ")}. ${status}`);
   } catch (error) {
     console.error("[Rotation Optimiser] Supabase load failed",error);
-    preparedData = null; updateButtons();
+    affiliatedOrigins = null; preparedData = null; updateButtons();
     setStatus(`Supabase loading failed: ${error.message}. No CSV fallback was used.`);
   }
 }
@@ -566,7 +584,7 @@ function renderDemandSummary() {
 // ============================================================
 
 async function runOptimiser() {
-  if (isRunning || !preparedData || !fleetState) {
+  if (isRunning || !preparedData || !fleetState || !originAllowed()) {
     return;
   }
 
@@ -592,7 +610,12 @@ async function runOptimiser() {
   }
 
   // Fail closed if the fleet register is unreachable or has changed.
-  try { await refreshFleet(); }
+  try {
+    const latestAffiliations = await loadAffiliatedHubs();
+    affiliatedOrigins = new Set(latestAffiliations.map(normaliseHub));
+    if (!originAllowed()) throw new Error(`${HUB} is now affiliated; optimisation disabled`);
+    await refreshFleet();
+  }
   catch(error) { fleetState=null;updateButtons();setStatus(`Cannot optimise without fleet status: ${error.message}`);return; }
   if (isRunning || !preparedData) return;
   optimisationResult = null;
@@ -797,6 +820,7 @@ function stopOptimiser() {
 
   async function downloadRotations() {
     try { await refreshFleet(); } catch(e) { setStatus(`Cannot export without checking fleet: ${e.message}`); return; }
+    if (!originAllowed()) {setStatus("Affiliated hub origin: export blocked.");return;}
     if (resultFleetVersion !== fleetVersion(fleetState)) {setStatus("Fleet allocation changed; rerun optimisation before export.");return;}
     if (!optimisationResult?.rotations?.length) {
       return;
@@ -864,7 +888,7 @@ async function initialise() {
   updateButtons();
   $("db-sign-in")?.addEventListener("click",signInForOptimiser);
   $("db-sign-out")?.addEventListener("click",()=>{
-    accessToken=null; scannerEndpoint=""; fleetState=null; rawRoutes=[]; rawPricing=[]; preparedData=null;
+    accessToken=null; scannerEndpoint=""; fleetState=null; affiliatedOrigins=null; rawRoutes=[]; rawPricing=[]; preparedData=null;
     availableHubs=[]; optimisationResult=null; clearResults(); renderHubOptions(); updateButtons();
     $("db-auth-status").textContent="Not signed in";
     setStatus("Signed out. Sign in to reload production data.");
