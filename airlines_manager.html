@@ -1471,7 +1471,15 @@
       const scanCodes = (Array.isArray(scanHubs) ? scanHubs : [scanHubs])
         .map(h => String(typeof h === 'object' && h !== null ? (h.hub_code || h.hubCode || h.hub || '') : (h || '')).toUpperCase())
         .filter(Boolean);
-      const blockedScan = !affiliationVerified || scanCodes.length === 0 || scanCodes.some(code => affiliatedOrigins.has(code));
+      // Status responses need not repeat hubCode. The latest endpoint has already
+      // identified this exact scan as CGK; never infer eligibility for another ID.
+      const statusScanId = result?.scan?.id ?? result?.scanId ?? currentScanId;
+      const verifiedCGK = selectedScanVerified && !!currentScanId &&
+        statusScanId === currentScanId &&
+        (scanCodes.length === 0 || (scanCodes.length === 1 && scanCodes[0] === PRICE_TEST_HUB));
+      const blockedScan = !affiliationVerified || !verifiedCGK ||
+        affiliatedOrigins.has(PRICE_TEST_HUB) ||
+        scanCodes.some(code => affiliatedOrigins.has(code));
       optimiserButton.dataset.affiliationBlocked = blockedScan ? "true" : "false";
 
       const audit =
@@ -4291,7 +4299,13 @@ checkbox.addEventListener(
         await refreshAffiliatedOrigins();
         const scanHubs = latestStatus?.scan?.hubs || latestStatus?.hubs || latestStatus?.scan?.hub_code || latestStatus?.scan?.hubCode || latestStatus?.scan?.hub;
         const scanCodes = (Array.isArray(scanHubs) ? scanHubs : [scanHubs]).map(h => String(typeof h === "object" && h !== null ? (h.hub_code || h.hubCode || h.hub || "") : (h || "")).trim().toUpperCase()).filter(Boolean);
-        if (!scanCodes.length || scanCodes.some(code => affiliatedOrigins.has(code))) throw new Error("Affiliated hub or unverified scan origin: optimisation blocked.");
+        const statusScanId = latestStatus?.scan?.id ?? latestStatus?.scanId ?? currentScanId;
+        if (!selectedScanVerified || !currentScanId || statusScanId !== currentScanId ||
+            !affiliationVerified || affiliatedOrigins.has(PRICE_TEST_HUB) ||
+            (scanCodes.length && (scanCodes.length !== 1 || scanCodes[0] !== PRICE_TEST_HUB)) ||
+            scanCodes.some(code => affiliatedOrigins.has(code))) {
+          throw new Error("Affiliated hub or unverified CGK scan identity: optimisation blocked.");
+        }
         const result = await callFunction({
           action: "results",
           scanId: currentScanId
@@ -4300,7 +4314,10 @@ checkbox.addEventListener(
         await refreshAffiliatedOrigins();
         optimiserData = result;
         selectedRouteIds.clear();
-        if (result.scan?.id) setCurrentScanId(result.scan.id);
+        // Do not clear verified scan identity when results refer to the same scan.
+        if (result.scan?.id && result.scan.id !== currentScanId) {
+          throw new Error("Results belong to a different scan. Optimisation blocked.");
+        }
         lastFullRefresh.textContent =
           `Last full refresh: ${formatDateTime(result.scan?.completedAt)}`;
         optimiserTab = "amendable";
@@ -4331,7 +4348,9 @@ updateBatchControls();
         optimiserButton.dataset.affiliationBlocked = affiliationBlocked ? "true" : "false";
       } finally {
         optimiserButton.textContent = "View Optimiser";
-        optimiserButton.disabled = !latestStatus?.complete || optimiserButton.dataset.affiliationBlocked === "true";
+        optimiserButton.disabled = !selectedScanVerified || !affiliationVerified ||
+          affiliatedOrigins.has(PRICE_TEST_HUB) || !latestStatus?.complete ||
+          optimiserButton.dataset.affiliationBlocked === "true";
       }
     }
 
