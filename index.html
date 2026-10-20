@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Airlines Manager | Optimisers</title>
+  <title>Airlines Manager | Management Tools</title>
   <style>
     :root{color-scheme:dark;--bg:#0b0d10;--panel:#13161b;--border:#2a3039;--text:#f5f7fa;--muted:#929aa6;--accent:#ccff00}
     *{box-sizing:border-box}
@@ -28,25 +28,25 @@
 <header>
   <p class="eyebrow">AIRLINES MANAGER</p>
   <h1>Optimisation tools</h1>
-  <p class="subtitle">Manage aircraft rotations and route pricing in one place.</p>
+  <p class="subtitle">Import game data, set prices and create aircraft schedules in one place.</p>
   <div class="shared-auth"><span id="shared-auth-status">Not signed in</span><input id="shared-email" type="email" autocomplete="username" placeholder="Supabase email"><input id="shared-password" type="password" autocomplete="current-password" placeholder="Password"><button id="shared-login" type="button">Sign in</button><button id="shared-logout" type="button" hidden>Sign out</button><span id="shared-auth-error" role="alert"></span></div>
-  <nav role="tablist" aria-label="Optimiser tools">
-    <button id="tab-rotation" class="tab" role="tab" aria-selected="true" aria-controls="frame-rotation" type="button">Rotation Optimiser</button>
-    <button id="tab-price" class="tab" role="tab" aria-selected="false" aria-controls="frame-price" type="button">Price Optimiser</button>
-    <button id="tab-import" class="tab" role="tab" aria-selected="false" aria-controls="frame-import" type="button">Route Importer</button>
-    <a id="open-page" class="external" href="rotation.html" target="_blank" rel="noopener">Open separately ↗</a>
+  <nav role="tablist" aria-label="Airlines Manager tools">
+    <button id="tab-import" class="tab" role="tab" aria-selected="true" aria-controls="frame-import" type="button">Import Game Data</button>
+    <button id="tab-price" class="tab" role="tab" aria-selected="false" aria-controls="frame-price" type="button">Set Prices</button>
+    <button id="tab-rotation" class="tab" role="tab" aria-selected="false" aria-controls="frame-rotation" type="button">Create Schedules</button>
+    <a id="open-page" class="external" href="route-importer.html" target="_blank" rel="noopener">Open separately ↗</a>
   </nav>
 </header>
 <main>
-  <iframe id="frame-rotation" title="Rotation Optimiser" src="rotation.html"></iframe>
-  <iframe id="frame-price" title="Price Optimiser" data-src="airlines_manager.html" hidden></iframe>
-  <iframe id="frame-import" title="Route Importer" data-src="route-importer.html" hidden></iframe>
+  <iframe id="frame-import" title="Import Game Data" src="route-importer.html"></iframe>
+  <iframe id="frame-price" title="Set Prices" data-src="airlines_manager.html" hidden></iframe>
+  <iframe id="frame-rotation" title="Create Schedules" data-src="rotation.html" hidden></iframe>
 </main>
 <script src="am-shared-auth.js"></script>
 <script>
   const views={rotation:{tab:document.getElementById('tab-rotation'),frame:document.getElementById('frame-rotation'),url:'rotation.html'},price:{tab:document.getElementById('tab-price'),frame:document.getElementById('frame-price'),url:'airlines_manager.html'},import:{tab:document.getElementById('tab-import'),frame:document.getElementById('frame-import'),url:'route-importer.html'}};
   function show(which){
-    if(!views[which])which='rotation';
+    if(!views[which])which='import';
     for(const [key,view] of Object.entries(views)){
       const active=key===which;
       view.tab.setAttribute('aria-selected',String(active));
