@@ -32,6 +32,7 @@
   <nav role="tablist" aria-label="Optimiser tools">
     <button id="tab-rotation" class="tab" role="tab" aria-selected="true" aria-controls="frame-rotation" type="button">Rotation Optimiser</button>
     <button id="tab-price" class="tab" role="tab" aria-selected="false" aria-controls="frame-price" type="button">Price Optimiser</button>
+    <button id="tab-import" class="tab" role="tab" aria-selected="false" aria-controls="frame-import" type="button">Route Importer</button>
     <a id="open-page" class="external" href="rotation.html" target="_blank" rel="noopener">Open separately ↗</a>
   </nav>
 </header>
@@ -40,7 +41,7 @@
   <iframe id="frame-price" title="Price Optimiser" data-src="airlines_manager.html" hidden></iframe>
 </main>
 <script>
-  const views={rotation:{tab:document.getElementById('tab-rotation'),frame:document.getElementById('frame-rotation'),url:'rotation.html'},price:{tab:document.getElementById('tab-price'),frame:document.getElementById('frame-price'),url:'airlines_manager.html'}};
+  const views={rotation:{tab:document.getElementById('tab-rotation'),frame:document.getElementById('frame-rotation'),url:'rotation.html'},price:{tab:document.getElementById('tab-price'),frame:document.getElementById('frame-price'),url:'airlines_manager.html'},import:{tab:document.getElementById('tab-import'),frame:document.getElementById('frame-import'),url:'route-importer.html'}};
   function show(which){
     if(!views[which])which='rotation';
     for(const [key,view] of Object.entries(views)){
