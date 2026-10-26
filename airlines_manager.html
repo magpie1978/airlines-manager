@@ -2878,15 +2878,9 @@ function rowPayload(row) {
           row.eco_target_price
         ),
 
-      bus:
-        numberOrNull(
-          row.bus_target_price
-        ),
+      bus: 0,
 
-      first:
-        numberOrNull(
-          row.first_target_price
-        ),
+      first: 0,
 
       cargo:
         numberOrNull(
@@ -4320,6 +4314,21 @@ checkbox.addEventListener(
         });
 
         await refreshAffiliatedOrigins();
+        // User preference: Business and First are deliberately priced at $0.
+        // Normalise displayed targets and batch payloads consistently.
+        for (const row of [
+          ...(result.amendableRoutes || []),
+          ...(result.lockedRoutes || [])
+        ]) {
+          row.bus_target_price = 0;
+          row.first_target_price = 0;
+          if (row.bus_current_price != null) {
+            row.bus_change = -Number(row.bus_current_price);
+          }
+          if (row.first_current_price != null) {
+            row.first_change = -Number(row.first_current_price);
+          }
+        }
         optimiserData = result;
         selectedRouteIds.clear();
         // Do not clear verified scan identity when results refer to the same scan.
