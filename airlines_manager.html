@@ -820,7 +820,7 @@
         <div>
           <div class="eyebrow">Formula targets</div>
           <h2 style="margin:0">Price Optimiser</h2>
-          <div class="progress-meta">Economy, Business, First and Cargo targets calculated from the completed scan.</div>
+          <div class="progress-meta">Economy, Business, First and Cargo targets calculated from the selected hub’s verified completed scan. Switch hubs using the dropdown below.</div>
           <div id="lastFullRefresh" class="refresh-info">Last full refresh: —</div>
         </div>
         <div class="optimiser-actions">
@@ -839,7 +839,7 @@
     <div class="optimiser-toolbar">
     
       <select id="hubFilter" aria-label="Hub">
-        <option value="all">All hubs</option>
+        <option value="">Discovering eligible hubs…</option>
       </select>
     
       <input
@@ -972,7 +972,9 @@
      * A Full Refresh replaces this with the newly-created scan.
      */
     let currentScanId = null;
-    const PRICE_TEST_HUB = "CGK"; // Explicit test hub; never fall back to another hub.
+    let PRICE_TEST_HUB = null; // Active verified scan hub; never mix scan IDs across hubs.
+    let eligiblePricingHubs = [];
+    let hubDiscoveryVerified = false;
     let selectedScanVerified = false;
 
 
@@ -1479,10 +1481,10 @@
       // Status responses need not repeat hubCode. The latest endpoint has already
       // identified this exact scan as CGK; never infer eligibility for another ID.
       const statusScanId = result?.scan?.id ?? result?.scanId ?? currentScanId;
-      const verifiedCGK = selectedScanVerified && !!currentScanId &&
+      const verifiedHub = selectedScanVerified && !!currentScanId &&
         statusScanId === currentScanId &&
         (scanCodes.length === 0 || (scanCodes.length === 1 && scanCodes[0] === PRICE_TEST_HUB));
-      const blockedScan = !affiliationVerified || !verifiedCGK ||
+      const blockedScan = !affiliationVerified || !verifiedHub ||
         affiliatedOrigins.has(PRICE_TEST_HUB) ||
         scanCodes.some(code => affiliatedOrigins.has(code));
       optimiserButton.dataset.affiliationBlocked = blockedScan ? "true" : "false";
@@ -1606,7 +1608,7 @@
     async function loadStatus() {
 
       if (!currentScanId || !selectedScanVerified) {
-        throw new Error("No verified CGK scan is selected.");
+        throw new Error("No verified scan is selected for the active hub.");
       }
 
       if (
@@ -1726,7 +1728,7 @@
 
       if (running) return;
       if (!currentScanId || !selectedScanVerified) {
-        setActivity("Select a verified CGK scan before continuing.", "error");
+        setActivity("Select a verified scan for the active hub before continuing.", "error");
         return;
       }
 
@@ -2295,195 +2297,83 @@ function selectAllAvailableRoutes() {
     }
     
     
+    // Discover origin hubs from production routes, not from a hardcoded list.
+    // The signed-in user's RLS permissions govern this read.
+    async function discoverEligiblePricingHubs() {
+      hubDiscoveryVerified = false;
+      eligiblePricingHubs = [];
+      await refreshAffiliatedOrigins();
+      const sharedAuth = window.parent?.amSharedAuth;
+      const token = await sharedAuth?.token?.();
+      if (!token) throw new Error("Authenticated hub discovery requires the shared login.");
+
+      // Production schemas have used both hub and hub_code as the origin column.
+      // Only fall back on a genuine missing-column error, not an auth/RLS failure.
+      async function fetchHubs(column) {
+        const codes = new Set();
+        const pageSize = 1000;
+        for (let offset = 0; ; offset += pageSize) {
+          const url = new URL(`${SUPABASE_URL}/rest/v1/am_routes`);
+          url.searchParams.set("select", column);
+          url.searchParams.set("order", `${column}.asc`);
+          url.searchParams.set("limit", String(pageSize));
+          url.searchParams.set("offset", String(offset));
+          const response = await fetch(url, {
+            cache: "no-store",
+            headers: {
+              apikey: SUPABASE_PUBLISHABLE_KEY,
+              Authorization: `Bearer ${token}`,
+              Accept: "application/json"
+            }
+          });
+          const rows = await response.json();
+          if (!response.ok) {
+            const error = new Error(rows?.message || rows?.error || `HTTP ${response.status}`);
+            error.code = rows?.code;
+            throw error;
+          }
+          if (!Array.isArray(rows)) throw new Error("Invalid routes response during hub discovery.");
+          for (const row of rows) {
+            const code = String(row?.[column] ?? "").trim().toUpperCase();
+            if (/^[A-Z0-9]{3,5}$/.test(code)) codes.add(code);
+          }
+          if (rows.length < pageSize) break;
+          if (offset > 200000) throw new Error("Hub discovery exceeded the safety limit.");
+        }
+        return [...codes];
+      }
+
+      let codes;
+      try {
+        codes = await fetchHubs("hub");
+      } catch (error) {
+        if (error.code !== "42703" && !/column.*does not exist|could not find.*column/i.test(error.message)) throw error;
+        codes = await fetchHubs("hub_code");
+      }
+      if (!affiliationVerified) throw new Error("Affiliation status could not be verified.");
+      eligiblePricingHubs = codes.filter(code => !affiliatedOrigins.has(code)).sort();
+      if (!eligiblePricingHubs.length) {
+        throw new Error("No eligible hubs are visible in am_routes. Check authenticated read access and imported route data.");
+      }
+      hubDiscoveryVerified = true;
+      if (!eligiblePricingHubs.includes(PRICE_TEST_HUB)) PRICE_TEST_HUB = eligiblePricingHubs[0];
+      buildHubFilter();
+      return eligiblePricingHubs;
+    }
+
     function buildHubFilter() {
-    
-      if (
-        !hubFilter ||
-        !optimiserData
-      ) {
+      const current = PRICE_TEST_HUB;
+      hubFilter.replaceChildren();
+      if (!hubDiscoveryVerified) {
+        hubFilter.add(new Option("Eligible hubs unavailable", ""));
+        hubFilter.disabled = true;
         return;
       }
-    
-    
-      const previousValue =
-        hubFilter.value || "all";
-    
-    
-      const hubs =
-        new Map();
-    
-    
-      function addHub(row) {
-    
-        const code =
-          rowHubCode(row);
-    
-        if (!code || !eligibleOrigin(row)) {
-          return;
-        }
-    
-    
-        const name =
-          String(
-            row?.hub_name ||
-            row?.hubName ||
-            ""
-          ).trim();
-    
-    
-        if (
-          !hubs.has(code) ||
-          (
-            !hubs.get(code) &&
-            name
-          )
-        ) {
-    
-          hubs.set(
-            code,
-            name
-          );
-        }
-      }
-    
-    
-      /*
-       * Discover hubs from the actual
-       * optimiser route data.
-       */
-    
-      (
-        optimiserData.amendableRoutes ||
-        []
-      ).forEach(addHub);
-    
-    
-      (
-        optimiserData.lockedRoutes ||
-        []
-      ).forEach(addHub);
-    
-    
-      /*
-       * Also use hub metadata returned
-       * by the Edge Function, if present.
-       */
-    
-      const hubMetadata =
-        optimiserData.hubs ||
-        optimiserData.scanHubs ||
-        optimiserData.scan?.hubs ||
-        [];
-    
-    
-      if (
-        Array.isArray(
-          hubMetadata
-        )
-      ) {
-    
-        for (
-          const hub of hubMetadata
-        ) {
-    
-          const code =
-            String(
-              hub?.hub_code ||
-              hub?.hubCode ||
-              ""
-            )
-              .trim()
-              .toUpperCase();
-    
-    
-          const name =
-            String(
-              hub?.hub_name ||
-              hub?.hubName ||
-              ""
-            ).trim();
-    
-    
-          if (!code || !affiliationVerified || affiliatedOrigins.has(code)) {
-            continue;
-          }
-    
-    
-          if (
-            !hubs.has(code) ||
-            (
-              !hubs.get(code) &&
-              name
-            )
-          ) {
-    
-            hubs.set(
-              code,
-              name
-            );
-          }
-        }
-      }
-    
-    
-      /*
-       * Rebuild the dropdown.
-       */
-    
-      hubFilter.innerHTML = "";
-    
-    
-      hubFilter.appendChild(
-        new Option(
-          "All hubs",
-          "all"
-        )
-      );
-    
-    
-      [
-        ...hubs.entries()
-      ]
-        .sort(
-          ([codeA], [codeB]) =>
-            codeA.localeCompare(
-              codeB
-            )
-        )
-        .forEach(
-          ([code, name]) => {
-    
-            const label =
-              name
-                ? `${code} — ${name}`
-                : code;
-    
-    
-            hubFilter.appendChild(
-              new Option(
-                label,
-                code
-              )
-            );
-          }
-        );
-    
-    
-      /*
-       * Preserve the currently selected
-       * hub when the optimiser reloads.
-       */
-    
-      hubFilter.value =
-        (
-          previousValue === "all" ||
-          hubs.has(
-            previousValue
-          )
-        )
-          ? previousValue
-          : "all";
+      for (const hub of eligiblePricingHubs) hubFilter.add(new Option(hub, hub));
+      hubFilter.value = current;
+      hubFilter.disabled = eligiblePricingHubs.length < 2;
     }
+
 
     function summariseCabin(
   rows,
@@ -4221,7 +4111,7 @@ checkbox.addEventListener(
             !affiliationVerified || affiliatedOrigins.has(PRICE_TEST_HUB) ||
             (scanCodes.length && (scanCodes.length !== 1 || scanCodes[0] !== PRICE_TEST_HUB)) ||
             scanCodes.some(code => affiliatedOrigins.has(code))) {
-          throw new Error("Affiliated hub or unverified CGK scan identity: optimisation blocked.");
+          throw new Error("Affiliated hub or unverified scan identity: optimisation blocked.");
         }
         const result = await callFunction({
           action: "results",
@@ -4243,6 +4133,13 @@ checkbox.addEventListener(
           if (row.first_current_price != null) {
             row.first_change = -Number(row.first_current_price);
           }
+        }
+        const resultHubs = [
+          ...(result.amendableRoutes || []),
+          ...(result.lockedRoutes || [])
+        ].map(rowHubCode).filter(Boolean);
+        if (resultHubs.some(code => code !== PRICE_TEST_HUB)) {
+          throw new Error("Pricing results contain routes from another hub; refusing to mix scans.");
         }
         optimiserData = result;
         selectedRouteIds.clear();
@@ -4302,23 +4199,45 @@ updateBatchControls();
     lockedTab.addEventListener("click", () => showTab("locked"));
 
 
-hubFilter.addEventListener(
-  "change",
-  () => {
+hubFilter.addEventListener("change", async () => {
+      const requestedHub = hubFilter.value;
+      if (requestedHub === PRICE_TEST_HUB) return;
+      if (!hubDiscoveryVerified || !eligiblePricingHubs.includes(requestedHub)) {
+        buildHubFilter();
+        return;
+      }
+      if (running || activeBatch) {
+        hubFilter.value = PRICE_TEST_HUB;
+        batchStatus.textContent = "Finish or pause the current operation before switching hubs.";
+        return;
+      }
+      PRICE_TEST_HUB = requestedHub;
+      selectedRouteIds.clear();
+      optimiserData = null;
+      latestStatus = null;
+      setCurrentScanId(null);
+      optimiserButton.disabled = true;
+      optimiserView.classList.add("hidden");
+      scanCard.classList.remove("hidden");
+      setActivity(`Loading the latest verified ${PRICE_TEST_HUB} scan…`);
+      try {
+        await refreshAffiliatedOrigins();
+        if (affiliatedOrigins.has(PRICE_TEST_HUB)) {
+          throw new Error(`${PRICE_TEST_HUB} is affiliated and cannot be used for pricing.`);
+        }
+        const scan = await loadLatestCompletedScan();
+        if (!scan) throw new Error(`No completed ${PRICE_TEST_HUB} scan is available.`);
+        await loadStatus();
+        if (latestStatus?.complete && optimiserButton.dataset.affiliationBlocked !== "true") {
+          await loadOptimiser();
+        }
+      } catch (error) {
+        setStatusPill("failed");
+        setActivity(error.message, "error");
+        buildHubFilter();
+      }
+    });
 
-    expandedRouteId = null;
-
-    selectedRouteIds.clear();
-
-    renderOptimiserSummary();
-
-    updateOptimiserTabCounts();
-
-    renderOptimiserRows();
-
-    updateBatchControls();
-  }
-);
 
     selectAllButton.addEventListener("click",selectAllAvailableRoutes);    
     applySelectedButton.addEventListener("click", startSelectedBatch);
@@ -4340,7 +4259,12 @@ hubFilter.addEventListener(
 
 
     async function loadLatestCompletedScan() {
-      const result = await callFunction({ action: "latest", hub: PRICE_TEST_HUB });
+      const requestedHub = PRICE_TEST_HUB;
+      if (!hubDiscoveryVerified || !eligiblePricingHubs.includes(requestedHub)) {
+        throw new Error("The selected hub is not verified as an eligible origin.");
+      }
+      const result = await callFunction({ action: "latest", hub: requestedHub });
+      if (requestedHub !== PRICE_TEST_HUB) throw new Error("Hub changed during scan discovery.");
 
       if (!result.hasCompletedScan || !result.scan?.id) {
         setCurrentScanId(null);
@@ -4374,7 +4298,7 @@ hubFilter.addEventListener(
     async function startFullRefresh() {
       if (running) return;
       // Starting a new scan is disabled until the backend accepts an explicit hub.
-      setActivity("CGK full refresh requires a hub-scoped start action in the Edge Function. No scan has been started.", "error");
+      setActivity("Full Refresh is disabled until the Edge Function supports verified hub-scoped start actions. Use Import Game Data to rescan a hub. No scan has been started.", "error");
       return;
 
       const confirmed = window.confirm(
@@ -4491,6 +4415,7 @@ hubFilter.addEventListener(
           throw new Error("Open Price Optimiser through the main Airlines Manager application (#price), not as a standalone HTML page.");
         }
         await window.parent.amSharedAuth.token();
+        await discoverEligiblePricingHubs();
         const latestScan = await loadLatestCompletedScan();
         if (latestScan) {
           await loadStatus();
@@ -4502,6 +4427,7 @@ hubFilter.addEventListener(
     }
 
 
+    buildHubFilter();
     initialise();
   </script>
 
