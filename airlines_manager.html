@@ -1188,6 +1188,7 @@
           ),
           {
             method: "GET",
+            signal: options.signal,
 
             headers: {
               "apikey":
@@ -1218,11 +1219,14 @@
         !response.ok
       ) {
 
-        throw new Error(
+        const error = new Error(
           result?.message ||
           result?.error ||
           `HTTP ${response.status}`
         );
+        error.httpStatus = response.status;
+        error.retryAfter = response.headers.get("Retry-After");
+        throw error;
       }
 
 
@@ -3318,163 +3322,73 @@ async function startSelectedBatch() {
   try {
 
     /*
-     * Preflight every selected route immediately before
-     * starting the batch.
-     *
-     * Keep concurrency bounded so Select All does not
-     * create hundreds of simultaneous requests.
+     * Rate-limited preflight: sequential checks avoid overwhelming
+     * the Edge Function. Transient 429/network/5xx errors are retried.
+     * Successful checks are kept in memory, never repeated.
      */
-    const PREFLIGHT_CONCURRENCY =
-      10;
+    const PREFLIGHT_TIMEOUT_MS = 30000;
+    const PREFLIGHT_GAP_MS = 1200;
+    const PREFLIGHT_MAX_RETRIES = 7;
+    const checks = new Array(rows.length);
+    let completedChecks = 0;
+    let nextRequestAt = 0;
 
-    const PREFLIGHT_TIMEOUT_MS =
-      30000;
+    const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 
+    async function preflightRequest(row, index) {
+      const routeName = row.route || row.route_id;
+      for (let attempt = 0; attempt <= PREFLIGHT_MAX_RETRIES; attempt++) {
+        const gap = Math.max(0, nextRequestAt - Date.now());
+        if (gap) await wait(gap);
+        nextRequestAt = Date.now() + PREFLIGHT_GAP_MS;
 
-    const checks =
-      new Array(
-        rows.length
-      );
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), PREFLIGHT_TIMEOUT_MS);
+        try {
+          return await callFunction({
+            action: "price-status",
+            scanId: currentScanId,
+            hubId: Number(row.hub_id),
+            routeId: Number(row.route_id)
+          }, { signal: controller.signal });
+        } catch (error) {
+          const status = error.httpStatus;
+          const message = String(error.message || "");
+          const transient = status === 429 || status === 408 ||
+            (status >= 500 && status <= 599) ||
+            error.name === "AbortError" ||
+            error instanceof TypeError ||
+            /too many requests|failed to fetch|networkerror|timed out/i.test(message);
 
+          if (!transient || attempt === PREFLIGHT_MAX_RETRIES) {
+            throw new Error(
+              `Preflight failed for ${routeName} after ${attempt + 1} attempt(s): ${message}`
+            );
+          }
 
-    let nextCheckIndex =
-      0;
-
-    let completedChecks =
-      0;
-
-
-    async function withTimeout(
-      promise,
-      timeoutMs,
-      label
-    ) {
-
-      let timer;
-
-
-      try {
-
-        return await Promise.race([
-
-          promise,
-
-          new Promise(
-            (
-              _resolve,
-              reject
-            ) => {
-
-              timer =
-                setTimeout(
-                  () => {
-                    reject(
-                      new Error(
-                        `${label} timed out after ${Math.round(timeoutMs / 1000)} seconds.`
-                      )
-                    );
-                  },
-                  timeoutMs
-                );
-              }
-            )
-        ]);
-
-      } finally {
-
-        if (timer) {
-          clearTimeout(
-            timer
-          );
+          const retrySeconds = Number(error.retryAfter);
+          const retryAfterMs = Number.isFinite(retrySeconds) && retrySeconds > 0
+            ? retrySeconds * 1000 : 0;
+          const backoffMs = Math.min(30000, 1500 * 2 ** attempt);
+          const delayMs = Math.max(retryAfterMs, backoffMs) +
+            Math.floor(Math.random() * 500);
+          batchStatus.textContent =
+            `Checking selected routes: ${completedChecks}/${rows.length} — ` +
+            `${routeName} rate limited/network error; retry ${attempt + 1}/${PREFLIGHT_MAX_RETRIES} ` +
+            `in ${Math.ceil(delayMs / 1000)}s…`;
+          await wait(delayMs);
+        } finally {
+          clearTimeout(timer);
         }
       }
     }
 
-
-    async function preflightWorker() {
-
-      while (true) {
-
-        const index =
-          nextCheckIndex++;
-
-
-        if (
-          index >=
-          rows.length
-        ) {
-          return;
-        }
-
-
-        const row =
-          rows[index];
-
-
-        const routeName =
-          row.route ||
-          row.route_id;
-
-
-        checks[index] =
-          await withTimeout(
-
-            callFunction({
-
-              action:
-                "price-status",
-
-              scanId:
-                currentScanId,
-
-              hubId:
-                Number(
-                  row.hub_id
-                ),
-
-              routeId:
-                Number(
-                  row.route_id
-                )
-            }),
-
-            PREFLIGHT_TIMEOUT_MS,
-
-            `price-status for ${routeName}`
-          );
-
-
-        /*
-         * Only increment after the request
-         * has genuinely completed.
-         */
-        completedChecks++;
-
-
-        batchStatus.textContent =
-          `Checking selected routes: ${completedChecks}/${rows.length}…`;
-      }
+    for (let index = 0; index < rows.length; index++) {
+      checks[index] = await preflightRequest(rows[index], index);
+      completedChecks++;
+      batchStatus.textContent =
+        `Checking selected routes: ${completedChecks}/${rows.length}…`;
     }
-
-
-    const workerCount =
-      Math.min(
-        PREFLIGHT_CONCURRENCY,
-        rows.length
-      );
-
-
-    await Promise.all(
-      Array.from(
-        {
-          length:
-            workerCount
-        },
-        () =>
-          preflightWorker()
-      )
-    );
-
 
     /*
      * Reject anything which is no longer safe
