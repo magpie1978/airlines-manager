@@ -2297,63 +2297,25 @@ function selectAllAvailableRoutes() {
     }
     
     
-    // Discover origin hubs from production routes, not from a hardcoded list.
-    // The signed-in user's RLS permissions govern this read.
+    // Discover eligible owned origin hubs through the authenticated Edge Function.
+    // The browser never queries protected am_routes directly.
     async function discoverEligiblePricingHubs() {
       hubDiscoveryVerified = false;
       eligiblePricingHubs = [];
       await refreshAffiliatedOrigins();
-      const sharedAuth = window.parent?.amSharedAuth;
-      const token = await sharedAuth?.token?.();
-      if (!token) throw new Error("Authenticated hub discovery requires the shared login.");
-
-      // Production schemas have used both hub and hub_code as the origin column.
-      // Only fall back on a genuine missing-column error, not an auth/RLS failure.
-      async function fetchHubs(column) {
-        const codes = new Set();
-        const pageSize = 1000;
-        for (let offset = 0; ; offset += pageSize) {
-          const url = new URL(`${SUPABASE_URL}/rest/v1/am_routes`);
-          url.searchParams.set("select", column);
-          url.searchParams.set("order", `${column}.asc`);
-          url.searchParams.set("limit", String(pageSize));
-          url.searchParams.set("offset", String(offset));
-          const response = await fetch(url, {
-            cache: "no-store",
-            headers: {
-              apikey: SUPABASE_PUBLISHABLE_KEY,
-              Authorization: `Bearer ${token}`,
-              Accept: "application/json"
-            }
-          });
-          const rows = await response.json();
-          if (!response.ok) {
-            const error = new Error(rows?.message || rows?.error || `HTTP ${response.status}`);
-            error.code = rows?.code;
-            throw error;
-          }
-          if (!Array.isArray(rows)) throw new Error("Invalid routes response during hub discovery.");
-          for (const row of rows) {
-            const code = String(row?.[column] ?? "").trim().toUpperCase();
-            if (/^[A-Z0-9]{3,5}$/.test(code)) codes.add(code);
-          }
-          if (rows.length < pageSize) break;
-          if (offset > 200000) throw new Error("Hub discovery exceeded the safety limit.");
-        }
-        return [...codes];
-      }
-
-      let codes;
-      try {
-        codes = await fetchHubs("hub");
-      } catch (error) {
-        if (error.code !== "42703" && !/column.*does not exist|could not find.*column/i.test(error.message)) throw error;
-        codes = await fetchHubs("hub_code");
+      const result = await callFunction({action: "eligible-hubs"});
+      if (result?.ok !== true || !Array.isArray(result.hubs)) {
+        throw new Error("The eligible-hubs Edge Function returned an invalid response. Deploy the updated am-auth-test function first.");
       }
       if (!affiliationVerified) throw new Error("Affiliation status could not be verified.");
-      eligiblePricingHubs = codes.filter(code => !affiliatedOrigins.has(code)).sort();
+      const codes = result.hubs.map(h => String(h || "").trim().toUpperCase());
+      if (codes.some(h => !/^[A-Z0-9]{3,5}$/.test(h))) {
+        throw new Error("Eligible hub discovery returned an invalid hub code.");
+      }
+      eligiblePricingHubs = [...new Set(codes)]
+        .filter(code => !affiliatedOrigins.has(code)).sort();
       if (!eligiblePricingHubs.length) {
-        throw new Error("No eligible hubs are visible in am_routes. Check authenticated read access and imported route data.");
+        throw new Error("No eligible owned origin hubs were found.");
       }
       hubDiscoveryVerified = true;
       if (!eligiblePricingHubs.includes(PRICE_TEST_HUB)) PRICE_TEST_HUB = eligiblePricingHubs[0];
