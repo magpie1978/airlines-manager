@@ -3895,6 +3895,14 @@ if (
 }
       
       try {
+        const sharedAuth = window.parent?.amSharedAuth;
+        if (!sharedAuth || typeof sharedAuth.token !== "function") {
+          throw new Error("Authenticated session unavailable for price verification. Open through the main Airlines Manager application (#price).");
+        }
+        const verificationToken = await sharedAuth.token();
+        if (!verificationToken || typeof verificationToken !== "string") {
+          throw new Error("Signed-in session token unavailable for price verification.");
+        }
         const response = await fetch(
          functionUrl({
 
@@ -3913,7 +3921,7 @@ if (
             method: "POST",
             headers: {
               "apikey": SUPABASE_PUBLISHABLE_KEY,
-              "Authorization": `Bearer ${SUPABASE_PUBLISHABLE_KEY}`,
+              "Authorization": `Bearer ${verificationToken}`,
               "Content-Type": "application/json"
             },
             body: JSON.stringify({
