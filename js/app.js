@@ -370,7 +370,21 @@ async function loadAffiliatedHubs() {
 
 async function loadSupabaseData() {
   if (!(affiliatedOrigins instanceof Set)) throw new Error("Affiliated hub register not verified");
-  const hubs = ["BOM","CGK","MPM","BKK","DEL","DMK"].filter(hub => !affiliatedOrigins.has(hub));
+  // Discover owned origins from the authenticated server, not a hard-coded list.
+  // This is the same eligible-hubs endpoint used by the main Airlines Manager tool.
+  const url = new URL(scannerEndpoint);
+  url.searchParams.set("action", "eligible-hubs");
+  const response = await fetch(url, {
+    cache: "no-store",
+    headers: {apikey: SUPABASE_KEY, Authorization: `Bearer ${accessToken}`}
+  });
+  const result = await response.json();
+  if (!response.ok || result.ok !== true || !Array.isArray(result.hubs))
+    throw new Error(result.error || "Eligible hub discovery failed");
+  const codes = result.hubs.map(normaliseHub);
+  if (codes.some(code => !/^[A-Z0-9]{3,5}$/.test(code)))
+    throw new Error("Eligible hub discovery returned an invalid code");
+  const hubs = [...new Set(codes)].filter(hub => !affiliatedOrigins.has(hub)).sort();
   if (!hubs.length) throw new Error("No eligible origin hubs");
   const batches = await Promise.all(hubs.map(readProductionHub));
   const aircraft = await loadCSVFile("./data/aircraft.csv");
