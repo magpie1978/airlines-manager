@@ -370,7 +370,7 @@ async function loadAffiliatedHubs() {
 
 async function loadSupabaseData() {
   if (!(affiliatedOrigins instanceof Set)) throw new Error("Affiliated hub register not verified");
-  const hubs = ["BOM","CGK","MPM","BKK","DEL"].filter(hub => !affiliatedOrigins.has(hub));
+  const hubs = ["BOM","CGK","MPM","BKK","DEL","DMK"].filter(hub => !affiliatedOrigins.has(hub));
   if (!hubs.length) throw new Error("No eligible origin hubs");
   const batches = await Promise.all(hubs.map(readProductionHub));
   const aircraft = await loadCSVFile("./data/aircraft.csv");
